@@ -1,0 +1,4 @@
+Vendored dependencies (the build never downloads anything):
+
+- googletest 1.18.0 — third_party/googletest, unmodified except that the
+  .github, ci and docs folders were left out. Used by the tests only.
