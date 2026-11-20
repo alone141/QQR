@@ -5,6 +5,8 @@
 #include "FrameReader.hpp"
 #include "FrameRenderer.hpp"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <random>
 #include <vector>
@@ -32,6 +34,23 @@ std::vector<std::uint8_t> MakePayload(const vfdt::FrameLayout& layout, std::uint
         byte = static_cast<std::uint8_t>(random());
     }
     return payload;
+}
+
+vfdt::Image RotateClockwise(const vfdt::Image& image)
+{
+    vfdt::Image rotated = vfdt::MakeImage(image.height, image.width);
+    for (int y = 0; y < image.height; ++y)
+    {
+        for (int x = 0; x < image.width; ++x)
+        {
+            const std::size_t from = (static_cast<std::size_t>(y) * static_cast<std::size_t>(image.width) + static_cast<std::size_t>(x)) * 3;
+            const int targetX = image.height - 1 - y;
+            const int targetY = x;
+            const std::size_t to = (static_cast<std::size_t>(targetY) * static_cast<std::size_t>(rotated.width) + static_cast<std::size_t>(targetX)) * 3;
+            std::copy_n(image.pixels.begin() + static_cast<std::ptrdiff_t>(from), 3, rotated.pixels.begin() + static_cast<std::ptrdiff_t>(to));
+        }
+    }
+    return rotated;
 }
 
 vfdt::CameraModel MakeCamera()
@@ -117,6 +136,23 @@ TEST(FrameReaderTest, RollingShutterTearIsTorn)
     const vfdt::FrameReader reader{2};
     vfdt::FrameRead read{};
     EXPECT_EQ(reader.ReadFrame(camera.Capture(first, second, 0.01), read), vfdt::ReadCode::TornFrame);
+}
+
+TEST(FrameReaderTest, ReadsRecordingRotatedEachWay)
+{
+    const vfdt::FrameLayout layout = MakeLayout(2);
+    const std::vector<std::uint8_t> payload = MakePayload(layout, 8);
+    vfdt::Image image = vfdt::FrameRenderer{layout, cell_pixels}.Render(payload, 0);
+    const vfdt::FrameReader reader{2};
+    for (int turn = 1; turn <= 3; ++turn)
+    {
+        image = RotateClockwise(image);
+        vfdt::FrameRead read{};
+        ASSERT_EQ(reader.ReadFrame(image, read), vfdt::ReadCode::Ok) << "after " << turn << " quarter turns";
+        EXPECT_EQ(read.gridWidth, grid_width);
+        EXPECT_EQ(read.gridHeight, grid_height);
+        EXPECT_EQ(read.payload, payload);
+    }
 }
 
 TEST(FrameReaderTest, BlankImageHasNoFinders)

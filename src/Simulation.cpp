@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <random>
 #include <span>
 #include <string_view>
@@ -34,7 +35,7 @@ SimulationCode RunSimulation(std::string_view fileName, std::span<const std::uin
     const int screenWidth = (gridWidth + 2 * quiet_zone_cells) * config.cellPixels;
     const int screenHeight = (gridHeight + 2 * quiet_zone_cells) * config.cellPixels;
     CameraSimulator camera{config.camera, screenWidth, screenHeight};
-    Receiver receiver{config.bitsPerCell};
+    Receiver receiver{config.bitsPerCell, 1};
 
     report = SimulationReport{};
     report.gridWidth = gridWidth;
@@ -56,6 +57,12 @@ SimulationCode RunSimulation(std::string_view fileName, std::span<const std::uin
     if (!config.dumpDirectory.empty())
     {
         WritePpm(config.dumpDirectory / "screen-0000.ppm", shown);
+    }
+
+    std::ofstream recording{};
+    if (!config.recordPath.empty())
+    {
+        recording.open(config.recordPath, std::ios::binary);
     }
 
     double nextProgress = 1.0;
@@ -85,6 +92,10 @@ SimulationCode RunSimulation(std::string_view fileName, std::span<const std::uin
         if (!config.dumpDirectory.empty() && report.cameraFrames == 0)
         {
             WritePpm(config.dumpDirectory / "camera-0000.ppm", capture);
+        }
+        if (recording.is_open())
+        {
+            recording.write(reinterpret_cast<const char*>(capture.pixels.data()), static_cast<std::streamsize>(capture.pixels.size()));
         }
         receiver.AcceptImage(capture);
         ++report.cameraFrames;

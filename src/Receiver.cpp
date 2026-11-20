@@ -2,15 +2,18 @@
 #include "FrameLayout.hpp"
 #include "Packet.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <future>
 #include <span>
+#include <vector>
 
 namespace vfdt
 {
 
-Receiver::Receiver(int bitsPerCell)
-    : reader{bitsPerCell}
+Receiver::Receiver(int bitsPerCell, int threads)
+    : readers(static_cast<std::size_t>(std::max(1, threads)), FrameReader{bitsPerCell})
     , decoder{}
     , stats{}
 {
@@ -18,9 +21,37 @@ Receiver::Receiver(int bitsPerCell)
 
 ReadCode Receiver::AcceptImage(const Image& image)
 {
-    ++stats.images;
     FrameRead frame{};
-    const ReadCode code = reader.ReadFrame(image, frame);
+    const ReadCode code = readers.front().ReadFrame(image, frame);
+    AcceptFrame(code, frame);
+    return code;
+}
+
+void Receiver::AcceptImages(std::span<const Image> images)
+{
+    std::vector<FrameRead> frames(readers.size());
+    std::vector<std::future<ReadCode>> results;
+    for (std::size_t start = 0; start < images.size(); start += readers.size())
+    {
+        const std::size_t count = std::min(readers.size(), images.size() - start);
+        results.clear();
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            results.push_back(std::async(std::launch::async, [this, &images, &frames, start, i]()
+            {
+                return readers[i].ReadFrame(images[start + i], frames[i]);
+            }));
+        }
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            AcceptFrame(results[i].get(), frames[i]);
+        }
+    }
+}
+
+void Receiver::AcceptFrame(ReadCode code, const FrameRead& frame)
+{
+    ++stats.images;
     switch (code)
     {
     case ReadCode::Ok:
@@ -28,19 +59,19 @@ ReadCode Receiver::AcceptImage(const Image& image)
         break;
     case ReadCode::FindersNotFound:
         ++stats.findersNotFound;
-        return code;
+        return;
     case ReadCode::UnsupportedGrid:
         ++stats.unsupportedGrid;
-        return code;
+        return;
     case ReadCode::LowContrast:
         ++stats.lowContrast;
-        return code;
+        return;
     case ReadCode::BlendedFrame:
         ++stats.blended;
-        return code;
+        return;
     case ReadCode::TornFrame:
         ++stats.torn;
-        return code;
+        return;
     }
     stats.correctedBytes += static_cast<std::uint64_t>(frame.correctedBytes);
     stats.failedCodewords += static_cast<std::uint64_t>(frame.failedCodewords);
@@ -72,7 +103,6 @@ ReadCode Receiver::AcceptImage(const Image& image)
             ++stats.packetsRedundant;
         }
     }
-    return ReadCode::Ok;
 }
 
 const ReceiverStats& Receiver::Stats() const
