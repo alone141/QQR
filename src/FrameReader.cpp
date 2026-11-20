@@ -24,6 +24,15 @@ constexpr double blend_low = 0.25;
 constexpr double blend_high = 0.75;
 constexpr double sample_spread = 0.2;
 
+// For each rotation of the recording, which image corner (top-left, top-right, bottom-left, bottom-right) holds
+// each frame corner, in the same order.
+constexpr std::array<std::array<std::size_t, 4>, 4> corner_rotations{{
+    {0, 1, 2, 3},
+    {1, 3, 0, 2},
+    {3, 2, 1, 0},
+    {2, 0, 3, 1},
+}};
+
 using Color = std::array<double, 3>;
 
 struct BinaryImage
@@ -398,9 +407,10 @@ double TimingScore(const Image& image, const std::array<Point2, 4>& centers, int
     double score = 0.0;
     for (int i = corner_cells; i < length - corner_cells; ++i)
     {
-        const int x = horizontal ? i : finder_center_cell;
-        const int y = horizontal ? finder_center_cell : i;
-        const double luma = Luma(SampleCell(image, cellToImage, x, y));
+        const double x = (horizontal ? i : finder_center_cell) + 0.5;
+        const double y = (horizontal ? finder_center_cell : i) + 0.5;
+        const Point2 point = cellToImage.Map(Point2{x, y});
+        const double luma = Luma(SampleBilinear(image, point.x, point.y));
         score += i % 2 == 0 ? -luma : luma;
     }
     return score / std::max(1, length - 2 * corner_cells);
@@ -433,6 +443,16 @@ int EstimateGridSide(Point2 from, Point2 to, double cellPixels)
 {
     const double centerDistance = std::hypot(to.x - from.x, to.y - from.y) / cellPixels;
     return static_cast<int>(std::lround(centerDistance + finder_cells)) & ~1;
+}
+
+// Sizes the grid for one assignment of image corners to frame corners; returns how well both timing tracks match.
+double FitGridSize(const Image& image, const std::array<Point2, 4>& centers, double cellPixels, int& gridWidth, int& gridHeight)
+{
+    const int widthEstimate = EstimateGridSide(centers[0], centers[1], cellPixels);
+    gridHeight = SearchGridSide(image, centers, EstimateGridSide(centers[0], centers[2], cellPixels), widthEstimate, false);
+    gridWidth = SearchGridSide(image, centers, widthEstimate, gridHeight, true);
+    gridHeight = SearchGridSide(image, centers, gridHeight, gridWidth, false);
+    return TimingScore(image, centers, gridWidth, gridHeight, true) + TimingScore(image, centers, gridWidth, gridHeight, false);
 }
 
 int Classify(const Color& color, const std::vector<Color>& references)
@@ -468,19 +488,38 @@ FrameReader::FrameReader(int bitsPerCell)
 ReadCode FrameReader::ReadFrame(const Image& image, FrameRead& out) const
 {
     const BinaryImage binary = Binarize(image);
-    std::array<Point2, 4> centers{};
+    std::array<Point2, 4> imageCorners{};
     double module = 0.0;
-    if (!FindFinders(binary, centers, module))
+    if (!FindFinders(binary, imageCorners, module))
     {
         return ReadCode::FindersNotFound;
     }
 
-    // The finder spacing gives the grid size roughly; the timing tracks pin it down.
+    // The recording may be rotated: try each way the image corners can be the frame corners and keep the one
+    // whose timing tracks match. Within each, the finder spacing sizes the grid roughly and the tracks pin it down.
     const double cellPixels = module / finder_module_cells;
-    const int widthEstimate = EstimateGridSide(centers[0], centers[1], cellPixels);
-    int gridHeight = SearchGridSide(image, centers, EstimateGridSide(centers[0], centers[2], cellPixels), widthEstimate, false);
-    const int gridWidth = SearchGridSide(image, centers, widthEstimate, gridHeight, true);
-    gridHeight = SearchGridSide(image, centers, gridHeight, gridWidth, false);
+    std::array<Point2, 4> centers{};
+    int gridWidth = 0;
+    int gridHeight = 0;
+    double bestScore = 0.0;
+    for (std::size_t rotation = 0; rotation < corner_rotations.size(); ++rotation)
+    {
+        std::array<Point2, 4> candidate{};
+        for (std::size_t corner = 0; corner < 4; ++corner)
+        {
+            candidate[corner] = imageCorners[corner_rotations[rotation][corner]];
+        }
+        int candidateWidth = 0;
+        int candidateHeight = 0;
+        const double score = FitGridSize(image, candidate, cellPixels, candidateWidth, candidateHeight);
+        if (rotation == 0 || score > bestScore)
+        {
+            bestScore = score;
+            centers = candidate;
+            gridWidth = candidateWidth;
+            gridHeight = candidateHeight;
+        }
+    }
     if (cachedLayout.GridWidth() != gridWidth || cachedLayout.GridHeight() != gridHeight || cachedLayout.BitsPerCell() != bitsPerCell)
     {
         if (cachedLayout.Configure(gridWidth, gridHeight, bitsPerCell) != LayoutCode::Ok)

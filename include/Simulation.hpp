@@ -28,6 +28,7 @@ struct SimulationConfig
     int maxPasses{3};
     CameraModel camera{};
     std::filesystem::path dumpDirectory{};
+    std::filesystem::path recordPath{};
 };
 
 struct SimulationReport
