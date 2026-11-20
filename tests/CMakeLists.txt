@@ -7,11 +7,14 @@ add_executable(vfdt_tests
     FrameLayoutTest.cpp
     FrameReaderTest.cpp
     FrameRendererTest.cpp
+    GaloisTest.cpp
     HomographyTest.cpp
+    ImageTest.cpp
     ManifestTest.cpp
     PacketTest.cpp
     ReedSolomonTest.cpp
     SimulationTest.cpp
+    StillEncoderTest.cpp
     SymbolLayoutTest.cpp
     TransmitterTest.cpp
     VideoSourceTest.cpp

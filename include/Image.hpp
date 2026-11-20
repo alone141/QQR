@@ -48,4 +48,12 @@ std::array<double, 3> SampleBilinear(const Image& image, double x, double y);
  */
 ImageIoCode WritePpm(const std::filesystem::path& path, const Image& image);
 
+/**
+ * @brief Write an image as PNG, lossless. Images with at most 256 colours are stored indexed, at the smallest bit depth.
+ * @param path File to write.
+ * @param image Image to write.
+ * @return ImageIoCode::Ok on success, otherwise the failure.
+ */
+ImageIoCode WritePng(const std::filesystem::path& path, const Image& image);
+
 } // namespace vfdt

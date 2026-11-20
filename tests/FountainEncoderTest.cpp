@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "FountainEncoder.hpp"
+#include "Galois.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -45,22 +46,21 @@ TEST(FountainEncoderTest, LastSourceSymbolIsZeroPadded)
     }
 }
 
-TEST(FountainEncoderTest, RepairSymbolIsXorOfMaskedSources)
+TEST(FountainEncoderTest, RepairSymbolIsWeightedSumOfSources)
 {
     const std::vector<std::uint8_t> content = MakeContent(1000);
     const vfdt::FountainEncoder encoder{content, 100, 5};
-    const std::uint32_t esi = 25;
-    const std::vector<std::uint64_t> mask = vfdt::RepairMask(5, 0, esi, 10);
-    std::vector<std::uint8_t> expected(100, 0);
-    for (std::uint32_t i = 0; i < 10; ++i)
+    for (const std::uint32_t esi : {25U, 3000U})
     {
-        if (((mask[0] >> i) & 1ULL) != 0)
+        const std::vector<std::uint8_t> coefficients = vfdt::RepairCoefficients(5, 0, esi, 10);
+        std::vector<std::uint8_t> expected(100, 0);
+        for (std::uint32_t i = 0; i < 10; ++i)
         {
             for (std::size_t j = 0; j < 100; ++j)
             {
-                expected[j] ^= content[i * 100 + j];
+                expected[j] ^= vfdt::GfMul(coefficients[i], content[i * 100 + j]);
             }
         }
+        EXPECT_EQ(encoder.MakePacket(0, esi).symbol, expected) << "esi " << esi;
     }
-    EXPECT_EQ(encoder.MakePacket(0, esi).symbol, expected);
 }

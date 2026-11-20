@@ -84,6 +84,32 @@ TEST(FountainDecoderTest, RepairSymbolsAloneRecoverContent)
     EXPECT_TRUE(ContentMatches(decoder, content));
 }
 
+TEST(FountainDecoderTest, SmallBlockRecoversFromAnyKSymbols)
+{
+    const std::vector<std::uint8_t> content = MakeContent(10 * symbol_size, 8);
+    const vfdt::FountainEncoder encoder{content, symbol_size, session_id};
+    const std::uint32_t blockSymbols = encoder.Layout().BlockSymbols(0);
+    ASSERT_EQ(blockSymbols, 10U);
+    std::mt19937 random{9};
+    for (int trial = 0; trial < 50; ++trial)
+    {
+        // Lose a random number of sources and use exactly that many repair symbols: no spare.
+        std::vector<std::uint32_t> ids(blockSymbols + 6);
+        for (std::uint32_t i = 0; i < ids.size(); ++i)
+        {
+            ids[i] = i;
+        }
+        std::shuffle(ids.begin(), ids.end(), random);
+        vfdt::FountainDecoder decoder{};
+        for (std::uint32_t i = 0; i < blockSymbols; ++i)
+        {
+            decoder.AddPacket(encoder.MakePacket(0, ids[i]));
+        }
+        ASSERT_TRUE(decoder.IsComplete()) << "trial " << trial;
+        EXPECT_TRUE(ContentMatches(decoder, content));
+    }
+}
+
 TEST(FountainDecoderTest, MultipleBlocksCompleteIndependently)
 {
     const std::size_t size = static_cast<std::size_t>(vfdt::max_block_symbols) * symbol_size * 2 + 100;

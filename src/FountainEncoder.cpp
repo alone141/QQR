@@ -1,4 +1,5 @@
 #include "FountainEncoder.hpp"
+#include "Galois.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -33,31 +34,25 @@ Packet FountainEncoder::MakePacket(std::uint32_t blockIndex, std::uint32_t esi) 
     const std::uint32_t blockSymbols = layout.BlockSymbols(blockIndex);
     if (esi < blockSymbols)
     {
-        XorSourceSymbol(blockIndex, esi, packet.symbol);
+        AddSourceSymbol(blockIndex, esi, 1, packet.symbol);
         return packet;
     }
 
-    const std::vector<std::uint64_t> mask = RepairMask(sessionId, blockIndex, esi, blockSymbols);
+    const std::vector<std::uint8_t> coefficients = RepairCoefficients(sessionId, blockIndex, esi, blockSymbols);
     for (std::uint32_t i = 0; i < blockSymbols; ++i)
     {
-        if (((mask[i / 64] >> (i % 64)) & 1ULL) != 0)
-        {
-            XorSourceSymbol(blockIndex, i, packet.symbol);
-        }
+        AddSourceSymbol(blockIndex, i, coefficients[i], packet.symbol);
     }
     return packet;
 }
 
-void FountainEncoder::XorSourceSymbol(std::uint32_t blockIndex, std::uint32_t symbolIndex, std::span<std::uint8_t> out) const
+void FountainEncoder::AddSourceSymbol(std::uint32_t blockIndex, std::uint32_t symbolIndex, std::uint8_t factor, std::span<std::uint8_t> out) const
 {
     const std::uint64_t symbolOffset = static_cast<std::uint64_t>(symbolIndex) * layout.SymbolSize();
     const std::uint64_t blockBytes = layout.BlockBytes(blockIndex);
     const std::size_t available = static_cast<std::size_t>(std::min<std::uint64_t>(layout.SymbolSize(), blockBytes - symbolOffset));
-    const std::uint8_t* source = content.data() + layout.BlockOffset(blockIndex) + symbolOffset;
-    for (std::size_t i = 0; i < available; ++i)
-    {
-        out[i] ^= source[i];
-    }
+    const std::span<const std::uint8_t> source{content.data() + layout.BlockOffset(blockIndex) + symbolOffset, available};
+    GfMulAdd(out.first(available), source, factor);
 }
 
 } // namespace vfdt
