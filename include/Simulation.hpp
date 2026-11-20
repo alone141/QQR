@@ -29,6 +29,7 @@ struct SimulationConfig
     CameraModel camera{};
     std::filesystem::path dumpDirectory{};
     std::filesystem::path recordPath{};
+    bool stopWhenComplete{true};
 };
 
 struct SimulationReport

@@ -108,7 +108,7 @@ SimulationCode RunSimulation(std::string_view fileName, std::span<const std::uin
             progress(report);
             nextProgress += 1.0;
         }
-        if (receiver.Decoder().IsComplete())
+        if (config.stopWhenComplete && receiver.Decoder().IsComplete())
         {
             break;
         }

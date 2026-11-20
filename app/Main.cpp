@@ -75,7 +75,8 @@ void PrintUsage()
         "  --passes <n>         give up after n passes over the data (3)\n"
         "  --seed <n>           random seed (1)\n"
         "  --dump <dir>         write the first screen frame and camera capture as PPM\n"
-        "  --record <file>      write every camera capture as raw RGB24 (input for decode --raw)");
+        "  --record <file>      write every camera capture as raw RGB24 (input for decode --raw)\n"
+        "  --full               keep capturing every pass even after the file is recovered");
 }
 
 bool ParseDouble(std::string_view text, double& out)
@@ -447,6 +448,11 @@ int RunSimulate(int argc, char** argv)
     for (int i = 3; i < argc; ++i)
     {
         const std::string_view option{argv[i]};
+        if (option == "--full")
+        {
+            config.stopWhenComplete = false;
+            continue;
+        }
         if (i + 1 >= argc)
         {
             std::fprintf(stderr, "missing value for %s\n", argv[i]);
