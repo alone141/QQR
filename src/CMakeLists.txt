@@ -1,0 +1,19 @@
+add_library(vfdt_core
+    CameraSimulator.cpp
+    Checksum.cpp
+    FountainDecoder.cpp
+    FountainEncoder.cpp
+    FrameLayout.cpp
+    FrameReader.cpp
+    FrameRenderer.cpp
+    Homography.cpp
+    Image.cpp
+    Manifest.cpp
+    Packet.cpp
+    Receiver.cpp
+    ReedSolomon.cpp
+    Simulation.cpp
+    SymbolLayout.cpp
+    Transmitter.cpp
+)
+target_include_directories(vfdt_core PUBLIC ${PROJECT_SOURCE_DIR}/include)
