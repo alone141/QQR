@@ -6,6 +6,7 @@ add_library(vfdt_core
     FrameLayout.cpp
     FrameReader.cpp
     FrameRenderer.cpp
+    Galois.cpp
     Homography.cpp
     Image.cpp
     Manifest.cpp
@@ -14,6 +15,7 @@ add_library(vfdt_core
     ReedSolomon.cpp
     ScreenPlayer.cpp
     Simulation.cpp
+    StillEncoder.cpp
     SymbolLayout.cpp
     Transmitter.cpp
     VideoSource.cpp

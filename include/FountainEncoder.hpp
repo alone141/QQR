@@ -35,7 +35,7 @@ public:
     Packet MakePacket(std::uint32_t blockIndex, std::uint32_t esi) const;
 
 private:
-    void XorSourceSymbol(std::uint32_t blockIndex, std::uint32_t symbolIndex, std::span<std::uint8_t> out) const;
+    void AddSourceSymbol(std::uint32_t blockIndex, std::uint32_t symbolIndex, std::uint8_t factor, std::span<std::uint8_t> out) const;
 
     std::span<const std::uint8_t> content;
     SymbolLayout layout;

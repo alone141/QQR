@@ -1,7 +1,11 @@
+#include "FrameLayout.hpp"
+#include "FrameRenderer.hpp"
+#include "Image.hpp"
 #include "Manifest.hpp"
 #include "Receiver.hpp"
 #include "ScreenPlayer.hpp"
 #include "Simulation.hpp"
+#include "StillEncoder.hpp"
 #include "VideoSource.hpp"
 
 #include <algorithm>
@@ -18,6 +22,7 @@
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace
@@ -41,7 +46,8 @@ void PrintUsage()
     std::puts(
         "usage:\n"
         "  vfdt play <file> [options]           show <file> as frames on the screen\n"
-        "  vfdt decode <video>... [options]     recover the file from phone recordings\n"
+        "  vfdt image <file> [options]          encode a small <file> into one PNG to photograph\n"
+        "  vfdt decode <input>... [options]     recover the file from phone videos or photos\n"
         "  vfdt simulate <file> [options]       send <file> through a simulated camera\n"
         "\n"
         "play options:\n"
@@ -50,6 +56,12 @@ void PrintUsage()
         "  --fps <f>            data frames per second (20); rounded to the refresh rate\n"
         "  --repair <ratio>     repair symbols per pass, share of source symbols (0.25)\n"
         "  --window <WxH>       play in a window instead of full screen\n"
+        "\n"
+        "image options:\n"
+        "  --out <png>          output file (<file>.png)\n"
+        "  --size <auto|WxH>    screen size the image is made for (auto: smallest of 720p..4K that fits)\n"
+        "  --cell <px>          cell size in pixels (6)\n"
+        "  --colors <2|4>       colours per cell (4); decode must use the same\n"
         "\n"
         "decode options:\n"
         "  --out <dir>          write the recovered file here (vfdt-out)\n"
@@ -272,6 +284,116 @@ int RunPlay(int argc, char** argv)
         return exit_failed;
     }
     return exit_failed;
+}
+
+int RunImage(int argc, char** argv)
+{
+    if (argc < 3)
+    {
+        PrintUsage();
+        return exit_usage;
+    }
+    const std::filesystem::path input{argv[2]};
+    std::filesystem::path output = input.filename();
+    output += ".png";
+    std::vector<std::pair<int, int>> sizes{std::pair{1280, 720}, std::pair{1920, 1080}, std::pair{2560, 1440}, std::pair{3840, 2160}};
+    int cellPixels = 6;
+    int bitsPerCell = 2;
+    for (int i = 3; i < argc; i += 2)
+    {
+        const std::string_view option{argv[i]};
+        if (i + 1 >= argc)
+        {
+            std::fprintf(stderr, "missing value for %s\n", argv[i]);
+            return exit_usage;
+        }
+        const std::string_view value{argv[i + 1]};
+        bool ok = true;
+        if (option == "--out")
+        {
+            output = std::filesystem::path{std::string{value}};
+        }
+        else if (option == "--size")
+        {
+            int width = 0;
+            int height = 0;
+            ok = value == "auto" || ParseSize(value, width, height);
+            if (ok && value != "auto")
+            {
+                sizes = {std::pair{width, height}};
+            }
+        }
+        else if (option == "--cell")
+        {
+            ok = ParseInt(value, cellPixels) && cellPixels > 0;
+        }
+        else if (option == "--colors")
+        {
+            ok = ParseColors(value, bitsPerCell);
+        }
+        else
+        {
+            std::fprintf(stderr, "unknown option %s\n", argv[i]);
+            return exit_usage;
+        }
+        if (!ok)
+        {
+            std::fprintf(stderr, "bad value for %s: %s\n", argv[i], argv[i + 1]);
+            return exit_usage;
+        }
+    }
+
+    std::vector<std::uint8_t> fileBytes;
+    if (!ReadFile(input, fileBytes))
+    {
+        std::fprintf(stderr, "cannot read %s\n", input.string().c_str());
+        return exit_failed;
+    }
+    const std::vector<std::uint8_t> content = vfdt::PackContent(input.filename().string(), fileBytes);
+    const std::size_t manifestBytes = content.size() - fileBytes.size();
+
+    vfdt::FrameLayout layout{};
+    std::uint64_t capacity = 0;
+    bool fits = false;
+    std::pair<int, int> chosen{};
+    for (const std::pair<int, int>& size : sizes)
+    {
+        if (layout.Configure(vfdt::GridCells(size.first, cellPixels), vfdt::GridCells(size.second, cellPixels), bitsPerCell) != vfdt::LayoutCode::Ok)
+        {
+            continue;
+        }
+        capacity = vfdt::StillCapacity(layout);
+        chosen = size;
+        if (capacity >= content.size())
+        {
+            fits = true;
+            break;
+        }
+    }
+    if (!fits)
+    {
+        const std::uint64_t fileCapacity = capacity > manifestBytes ? capacity - manifestBytes : 0;
+        std::fprintf(stderr, "%s is %zu bytes; one %dx%d image with %d px cells holds at most %llu bytes of it.\n",
+                     input.filename().string().c_str(), fileBytes.size(), chosen.first, chosen.second, cellPixels,
+                     static_cast<unsigned long long>(fileCapacity));
+        std::fprintf(stderr, "use smaller cells (--cell), a larger --size, or vfdt play for video.\n");
+        return exit_failed;
+    }
+
+    std::vector<std::uint8_t> payload;
+    vfdt::BuildStillPayload(content, vfdt::SessionIdFor(content), layout, payload);
+    const vfdt::Image image = vfdt::FrameRenderer{layout, cellPixels}.Render(payload, 0);
+    if (vfdt::WritePng(output, image) != vfdt::ImageIoCode::Ok)
+    {
+        std::fprintf(stderr, "cannot write %s\n", output.string().c_str());
+        return exit_failed;
+    }
+    std::printf("wrote %s: %dx%d pixels for a %dx%d screen, grid %dx%d, %d colours\n", output.string().c_str(), image.width,
+                image.height, chosen.first, chosen.second, layout.GridWidth(), layout.GridHeight(), layout.ColorCount());
+    std::printf("%zu of %llu bytes used; %d packets, the rest is repair data\n", content.size(), static_cast<unsigned long long>(capacity),
+                layout.PacketsPerFrame());
+    std::printf("show it at 100%% zoom (one image pixel per screen pixel) or print it, photograph it, then: vfdt decode <photo>\n");
+    return exit_ok;
 }
 
 int RunDecode(int argc, char** argv)
@@ -601,6 +723,10 @@ int main(int argc, char** argv)
     if (command == "play")
     {
         return RunPlay(argc, argv);
+    }
+    if (command == "image")
+    {
+        return RunImage(argc, argv);
     }
     if (command == "decode")
     {

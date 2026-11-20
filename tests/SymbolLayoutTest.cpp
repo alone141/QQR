@@ -2,6 +2,7 @@
 
 #include "SymbolLayout.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -24,21 +25,27 @@ TEST(SymbolLayoutTest, TinyContentIsOneBlock)
     EXPECT_EQ(layout.BlockSymbols(0), 1U);
 }
 
-TEST(SymbolLayoutTest, RepairMaskIsDeterministic)
+TEST(SymbolLayoutTest, RepairCoefficientsAreDeterministic)
 {
-    EXPECT_EQ(vfdt::RepairMask(1, 2, 3000, 1000), vfdt::RepairMask(1, 2, 3000, 1000));
-    EXPECT_NE(vfdt::RepairMask(1, 2, 3000, 1000), vfdt::RepairMask(1, 2, 3001, 1000));
+    EXPECT_EQ(vfdt::RepairCoefficients(1, 2, 3000, 1000), vfdt::RepairCoefficients(1, 2, 3000, 1000));
+    EXPECT_NE(vfdt::RepairCoefficients(1, 2, 3000, 1000), vfdt::RepairCoefficients(1, 2, 3001, 1000));
 }
 
-TEST(SymbolLayoutTest, RepairMaskStaysInsideBlockAndIsNeverEmpty)
+TEST(SymbolLayoutTest, LowIdsUseNonZeroCauchyCoefficients)
 {
-    for (std::uint32_t esi = 1; esi < 200; ++esi)
+    const std::vector<std::uint8_t> coefficients = vfdt::RepairCoefficients(1, 0, 20, 10);
+    ASSERT_EQ(coefficients.size(), 10U);
+    EXPECT_TRUE(std::none_of(coefficients.begin(), coefficients.end(), [](std::uint8_t value) { return value == 0; }));
+}
+
+TEST(SymbolLayoutTest, HighIdsUseZeroOrOneAndAreNeverEmpty)
+{
+    for (std::uint32_t esi = vfdt::cauchy_symbol_limit; esi < vfdt::cauchy_symbol_limit + 200; ++esi)
     {
-        const std::vector<std::uint64_t> mask = vfdt::RepairMask(9, 0, esi, 1);
-        ASSERT_EQ(mask.size(), 1U);
-        EXPECT_EQ(mask[0], 1ULL);
+        const std::vector<std::uint8_t> single = vfdt::RepairCoefficients(9, 0, esi, 1);
+        ASSERT_EQ(single.size(), 1U);
+        EXPECT_EQ(single[0], 1);
     }
-    const std::vector<std::uint64_t> wide = vfdt::RepairMask(9, 0, 500, 70);
-    ASSERT_EQ(wide.size(), 2U);
-    EXPECT_EQ(wide[1] >> 6, 0ULL);
+    const std::vector<std::uint8_t> wide = vfdt::RepairCoefficients(9, 0, 5000, 70);
+    EXPECT_TRUE(std::all_of(wide.begin(), wide.end(), [](std::uint8_t value) { return value <= 1; }));
 }

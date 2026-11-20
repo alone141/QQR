@@ -1,4 +1,5 @@
 #include "FountainDecoder.hpp"
+#include "Galois.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -19,22 +20,9 @@ constexpr std::size_t retry_after_symbols = 4;
 
 struct EquationRow
 {
-    std::vector<std::uint64_t> bits;
+    std::vector<std::uint8_t> coefficients;
     std::vector<std::uint8_t> data;
 };
-
-void XorBytes(std::span<std::uint8_t> target, std::span<const std::uint8_t> source)
-{
-    for (std::size_t i = 0; i < target.size(); ++i)
-    {
-        target[i] ^= source[i];
-    }
-}
-
-bool TestBit(const std::vector<std::uint64_t>& bits, std::size_t index)
-{
-    return ((bits[index / 64] >> (index % 64)) & 1ULL) != 0;
-}
 
 } // namespace
 
@@ -178,39 +166,38 @@ bool FountainDecoder::TrySolve(std::uint32_t blockIndex)
 
         const std::size_t extraRows = extra_rows_per_attempt * (static_cast<std::size_t>(block.failedAttempts) + 1);
         const std::size_t rowCount = std::min(repairIds.size(), unknown.size() + extraRows);
-        const std::size_t words = (unknown.size() + 63) / 64;
 
-        // Each repair row starts as mask * sources = symbol; known sources move to the right side.
+        // Each repair row starts as coefficients * sources = symbol; known sources move to the right side.
         std::vector<EquationRow> rows(rowCount);
         for (std::size_t r = 0; r < rowCount; ++r)
         {
             const std::uint32_t esi = repairIds[r];
-            const std::vector<std::uint64_t> mask = RepairMask(sessionId, blockIndex, esi, blockSymbols);
-            rows[r].bits.assign(words, 0);
+            const std::vector<std::uint8_t> coefficients = RepairCoefficients(sessionId, blockIndex, esi, blockSymbols);
+            rows[r].coefficients.assign(unknown.size(), 0);
             rows[r].data = block.symbols.at(esi);
             for (std::uint32_t column = 0; column < blockSymbols; ++column)
             {
-                if (!TestBit(mask, column))
+                const std::uint8_t coefficient = coefficients[column];
+                if (coefficient == 0)
                 {
                     continue;
                 }
                 if (known[column] != nullptr)
                 {
-                    XorBytes(rows[r].data, *known[column]);
+                    GfMulAdd(rows[r].data, *known[column], coefficient);
                 }
                 else
                 {
-                    const std::size_t slot = unknownSlot[column];
-                    rows[r].bits[slot / 64] |= 1ULL << (slot % 64);
+                    rows[r].coefficients[unknownSlot[column]] = coefficient;
                 }
             }
         }
 
-        // Gauss-Jordan elimination over GF(2) on the unknown columns.
+        // Gauss-Jordan elimination over GF(256) on the unknown columns.
         for (std::size_t column = 0; column < unknown.size(); ++column)
         {
             std::size_t pivot = column;
-            while (pivot < rowCount && !TestBit(rows[pivot].bits, column))
+            while (pivot < rowCount && rows[pivot].coefficients[column] == 0)
             {
                 ++pivot;
             }
@@ -219,17 +206,20 @@ bool FountainDecoder::TrySolve(std::uint32_t blockIndex)
                 return false;
             }
             std::swap(rows[column], rows[pivot]);
+            EquationRow& pivotRow = rows[column];
+            const std::uint8_t pivotInverse = GfInverse(pivotRow.coefficients[column]);
+            GfScale(std::span<std::uint8_t>{pivotRow.coefficients}.subspan(column), pivotInverse);
+            GfScale(pivotRow.data, pivotInverse);
             for (std::size_t r = 0; r < rowCount; ++r)
             {
-                if (r == column || !TestBit(rows[r].bits, column))
+                const std::uint8_t factor = rows[r].coefficients[column];
+                if (r == column || factor == 0)
                 {
                     continue;
                 }
-                for (std::size_t w = column / 64; w < words; ++w)
-                {
-                    rows[r].bits[w] ^= rows[column].bits[w];
-                }
-                XorBytes(rows[r].data, rows[column].data);
+                GfMulAdd(std::span<std::uint8_t>{rows[r].coefficients}.subspan(column),
+                         std::span<const std::uint8_t>{pivotRow.coefficients}.subspan(column), factor);
+                GfMulAdd(rows[r].data, pivotRow.data, factor);
             }
         }
         for (std::size_t i = 0; i < unknown.size(); ++i)

@@ -1,7 +1,7 @@
 #include "ReedSolomon.hpp"
+#include "Galois.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -15,68 +15,24 @@ namespace
 
 using Poly = std::vector<std::uint8_t>;
 
-constexpr unsigned primitive_polynomial = 0x11DU;
-
-struct GaloisTables
-{
-    std::array<std::uint8_t, 512> exp;
-    std::array<int, 256> log;
-};
-
-GaloisTables MakeGaloisTables()
-{
-    GaloisTables tables{};
-    unsigned value = 1;
-    for (int i = 0; i < 255; ++i)
-    {
-        tables.exp[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(value);
-        tables.log[value] = i;
-        value <<= 1;
-        if ((value & 0x100U) != 0)
-        {
-            value ^= primitive_polynomial;
-        }
-    }
-    for (std::size_t i = 255; i < tables.exp.size(); ++i)
-    {
-        tables.exp[i] = tables.exp[i - 255];
-    }
-    return tables;
-}
-
-const GaloisTables galois = MakeGaloisTables();
-
 std::uint8_t Mul(std::uint8_t a, std::uint8_t b)
 {
-    if (a == 0 || b == 0)
-    {
-        return 0;
-    }
-    return galois.exp[static_cast<std::size_t>(galois.log[a] + galois.log[b])];
+    return GfMul(a, b);
 }
 
 std::uint8_t Div(std::uint8_t a, std::uint8_t b)
 {
-    if (a == 0)
-    {
-        return 0;
-    }
-    return galois.exp[static_cast<std::size_t>((galois.log[a] + 255 - galois.log[b]) % 255)];
+    return GfDiv(a, b);
 }
 
 std::uint8_t Pow2(int power)
 {
-    int reduced = power % 255;
-    if (reduced < 0)
-    {
-        reduced += 255;
-    }
-    return galois.exp[static_cast<std::size_t>(reduced)];
+    return GfPow2(power);
 }
 
 std::uint8_t Inverse(std::uint8_t a)
 {
-    return galois.exp[static_cast<std::size_t>(255 - galois.log[a])];
+    return GfInverse(a);
 }
 
 Poly PolyScale(const Poly& poly, std::uint8_t factor)
