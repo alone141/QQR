@@ -57,6 +57,28 @@ std::uint16_t GetU16(std::span<const std::uint8_t> in, std::size_t offset)
     return static_cast<std::uint16_t>(in[offset] | (in[offset + 1] << 8));
 }
 
+template <typename CaptureType>
+double GoodShare(const CaptureType& capture)
+{
+    if (capture.codewords <= 0)
+    {
+        return 0.0;
+    }
+    return static_cast<double>(capture.codewords - capture.failedCodewords - capture.wrongCodewords) / capture.codewords;
+}
+
+template <typename CaptureType>
+bool IsBetterCapture(const CaptureType& candidate, const CaptureType& current)
+{
+    const double candidateShare = GoodShare(candidate);
+    const double currentShare = GoodShare(current);
+    if (candidateShare != currentShare)
+    {
+        return candidateShare > currentShare;
+    }
+    return candidate.correctedBytes < current.correctedBytes;
+}
+
 bool SamePlan(const CalibrationHeader& a, const CalibrationHeader& b)
 {
     return a.framesPerStep == b.framesPerStep && a.fpsTenths == b.fpsTenths && a.bitsPerCell == b.bitsPerCell && a.cellSizes == b.cellSizes;
@@ -317,7 +339,9 @@ CalibrationReport CalibrationAnalyzer::Report() const
         next[i] = last;
     }
 
-    std::map<std::uint32_t, double> bestShare;
+    // Each frame is judged by its best capture. Captures taken while the screen switched frames are damaged in
+    // places, and another capture of the same frame usually reads clean; the transfer uses that one too.
+    std::map<std::uint32_t, std::size_t> bestCapture;
     std::uint32_t firstFrame = 0xFFFFFFFFU;
     std::uint32_t lastFrame = 0;
     for (std::size_t i = 0; i < captures.size(); ++i)
@@ -355,22 +379,18 @@ CalibrationReport CalibrationAnalyzer::Report() const
                 ++target.notLocated;
                 break;
             }
+        {
             ++target.framesRead;
             target.gridWidth = capture.gridWidth;
             target.gridHeight = capture.gridHeight;
             target.payloadBytes = capture.payloadBytes;
-            target.codewords += static_cast<std::uint64_t>(capture.codewords);
-            target.failedCodewords += static_cast<std::uint64_t>(capture.failedCodewords);
-            target.wrongCodewords += static_cast<std::uint64_t>(capture.wrongCodewords);
-            target.correctedBytes += static_cast<std::uint64_t>(capture.correctedBytes);
-            target.maxCorrectedBytes = std::max(target.maxCorrectedBytes, capture.maxCorrectedBytes);
-            if (capture.codewords > 0)
+            const auto [entry, inserted] = bestCapture.try_emplace(capture.frameIndex, i);
+            if (!inserted && IsBetterCapture(capture, captures[entry->second]))
             {
-                const double share = static_cast<double>(capture.codewords - capture.failedCodewords - capture.wrongCodewords) / capture.codewords;
-                double& best = bestShare[capture.frameIndex];
-                best = std::max(best, share);
+                entry->second = i;
             }
             break;
+        }
         case ReadCode::BlendedFrame:
         case ReadCode::TornFrame:
             ++target.blendedOrTorn;
@@ -383,17 +403,22 @@ CalibrationReport CalibrationAnalyzer::Report() const
         }
     }
 
-    // Yield: of the frames shown while recording, the share of their codewords read correctly at least once.
+    // Yield: of the frames shown while recording, the share of their codewords the best capture read correctly.
     std::vector<double> yieldSum(stepCount, 0.0);
+    for (const auto& [frame, index] : bestCapture)
+    {
+        const Capture& capture = captures[index];
+        CalibrationStep& target = report.steps[stepOf(frame)];
+        target.codewords += static_cast<std::uint64_t>(capture.codewords);
+        target.failedCodewords += static_cast<std::uint64_t>(capture.failedCodewords);
+        target.wrongCodewords += static_cast<std::uint64_t>(capture.wrongCodewords);
+        target.correctedBytes += static_cast<std::uint64_t>(capture.correctedBytes);
+        target.maxCorrectedBytes = std::max(target.maxCorrectedBytes, capture.maxCorrectedBytes);
+        yieldSum[stepOf(frame)] += GoodShare(capture);
+    }
     for (std::uint64_t frame = firstFrame; frame <= lastFrame; ++frame)
     {
-        const std::size_t step = stepOf(frame);
-        ++report.steps[step].framesExpected;
-        const auto found = bestShare.find(static_cast<std::uint32_t>(frame));
-        if (found != bestShare.end())
-        {
-            yieldSum[step] += found->second;
-        }
+        ++report.steps[stepOf(frame)].framesExpected;
     }
 
     double bestRate = 0.0;

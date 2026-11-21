@@ -2,6 +2,7 @@
 
 #include "Calibration.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -94,6 +95,35 @@ TEST(CalibrationTest, CleanFramesRecommendSmallestCells)
         EXPECT_TRUE(step.reliable) << step.cellPixels;
     }
     EXPECT_EQ(report.recommendedStep, 2);
+}
+
+TEST(CalibrationTest, FramesAreJudgedByTheirBestCapture)
+{
+    vfdt::CalibrationRenderer renderer{};
+    ASSERT_EQ(renderer.Configure(SmallPlan({6}, 3)), vfdt::CalibrationCode::Ok);
+    std::vector<vfdt::Image> images;
+    for (std::uint64_t frame = 0; frame < renderer.FramesPerCycle(); ++frame)
+    {
+        // First a capture torn mid-switch: a band in the middle already shows the next frame. Then a clean one.
+        vfdt::Image torn = renderer.Render(frame);
+        const vfdt::Image next = renderer.Render(frame + 1);
+        const std::size_t rowBytes = static_cast<std::size_t>(torn.width) * 3;
+        const std::size_t begin = static_cast<std::size_t>(torn.height) * 48 / 100 * rowBytes;
+        const std::size_t end = static_cast<std::size_t>(torn.height) * 52 / 100 * rowBytes;
+        std::copy(next.pixels.begin() + static_cast<std::ptrdiff_t>(begin), next.pixels.begin() + static_cast<std::ptrdiff_t>(end),
+                  torn.pixels.begin() + static_cast<std::ptrdiff_t>(begin));
+        images.push_back(std::move(torn));
+        images.push_back(renderer.Render(frame));
+    }
+    vfdt::CalibrationAnalyzer analyzer{2, 2};
+    analyzer.AcceptImages(images);
+    const vfdt::CalibrationReport report = analyzer.Report();
+    ASSERT_TRUE(report.found);
+    const vfdt::CalibrationStep& step = report.steps[0];
+    EXPECT_EQ(step.framesRead, 6U) << "blended/torn " << step.blendedOrTorn << ", lost " << step.notLocated;
+    EXPECT_EQ(step.maxCorrectedBytes, 0);
+    EXPECT_DOUBLE_EQ(step.frameYield, 1.0);
+    EXPECT_TRUE(step.reliable);
 }
 
 TEST(CalibrationTest, ImagesWithoutCalibrationFramesFindNothing)
