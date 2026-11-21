@@ -1,3 +1,4 @@
+#include "Calibration.hpp"
 #include "FrameLayout.hpp"
 #include "FrameRenderer.hpp"
 #include "Image.hpp"
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <charconv>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -41,6 +43,36 @@ constexpr std::string_view ffmpeg_name = "ffmpeg";
 constexpr std::string_view ffprobe_name = "ffprobe";
 #endif
 
+bool ParseDouble(std::string_view text, double& out)
+{
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), out);
+    return error == std::errc{} && end == text.data() + text.size();
+}
+
+bool ParseInt(std::string_view text, int& out)
+{
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), out);
+    return error == std::errc{} && end == text.data() + text.size();
+}
+
+bool ParseSize(std::string_view text, int& width, int& height)
+{
+    const std::size_t split = text.find('x');
+    return split != std::string_view::npos && ParseInt(text.substr(0, split), width) && ParseInt(text.substr(split + 1), height) &&
+           width > 0 && height > 0;
+}
+
+bool ParseColors(std::string_view text, int& bitsPerCell)
+{
+    int colors = 0;
+    if (!ParseInt(text, colors) || (colors != 2 && colors != 4))
+    {
+        return false;
+    }
+    bitsPerCell = colors == 2 ? 1 : 2;
+    return true;
+}
+
 void PrintUsage()
 {
     std::puts(
@@ -49,6 +81,9 @@ void PrintUsage()
         "  vfdt image <file> [options]          encode a small <file> into one PNG to photograph\n"
         "  vfdt decode <input>... [options]     recover the file from phone videos or photos\n"
         "  vfdt simulate <file> [options]       send <file> through a simulated camera\n"
+        "  vfdt calibrate show [options]        cycle test frames of several cell sizes on the screen\n"
+        "  vfdt calibrate check <video>... [o]  measure a recording of them and pick the cell size\n"
+        "  vfdt calibrate simulate [options]    run the calibration through a simulated camera\n"
         "\n"
         "play options:\n"
         "  --cell <px>          cell size in screen pixels (6)\n"
@@ -88,37 +123,442 @@ void PrintUsage()
         "  --seed <n>           random seed (1)\n"
         "  --dump <dir>         write the first screen frame and camera capture as PPM\n"
         "  --record <file>      write every camera capture as raw RGB24 (input for decode --raw)\n"
-        "  --full               keep capturing every pass even after the file is recovered");
+        "  --full               keep capturing every pass even after the file is recovered\n"
+        "\n"
+        "calibrate show options:\n"
+        "  --cells <list>       cell sizes to try, largest first, up to 8 (12,10,8,6,5,4,3)\n"
+        "  --colors <2|4>       colours per cell (4); check must use the same\n"
+        "  --seconds <s>        how long each cell size is shown (3)\n"
+        "  --fps <f>            frames per second (20); use the rate you will play at\n"
+        "  --window <WxH>       show in a window instead of full screen\n"
+        "\n"
+        "calibrate check options:\n"
+        "  --colors, --ffmpeg, --threads, --raw   as for decode\n"
+        "\n"
+        "calibrate simulate options:\n"
+        "  --cells, --colors, --seconds, --fps    as for calibrate show\n"
+        "  --screen, --camera, --camera-fps, --blur, --noise, --tilt, --coverage, --seed   as for simulate");
 }
 
-bool ParseDouble(std::string_view text, double& out)
+bool ParseCellList(std::string_view text, std::vector<int>& cells)
 {
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), out);
-    return error == std::errc{} && end == text.data() + text.size();
-}
-
-bool ParseInt(std::string_view text, int& out)
-{
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), out);
-    return error == std::errc{} && end == text.data() + text.size();
-}
-
-bool ParseSize(std::string_view text, int& width, int& height)
-{
-    const std::size_t split = text.find('x');
-    return split != std::string_view::npos && ParseInt(text.substr(0, split), width) && ParseInt(text.substr(split + 1), height) &&
-           width > 0 && height > 0;
-}
-
-bool ParseColors(std::string_view text, int& bitsPerCell)
-{
-    int colors = 0;
-    if (!ParseInt(text, colors) || (colors != 2 && colors != 4))
+    cells.clear();
+    while (!text.empty())
     {
-        return false;
+        const std::size_t comma = text.find(',');
+        int cell = 0;
+        if (!ParseInt(text.substr(0, comma), cell) || cell <= 0)
+        {
+            return false;
+        }
+        cells.push_back(cell);
+        text = comma == std::string_view::npos ? std::string_view{} : text.substr(comma + 1);
     }
-    bitsPerCell = colors == 2 ? 1 : 2;
-    return true;
+    return !cells.empty();
+}
+
+void ResolveFfmpeg(const char* argv0, std::filesystem::path directory, std::filesystem::path& ffmpeg, std::filesystem::path& ffprobe)
+{
+    if (directory.empty())
+    {
+        std::error_code error;
+        const std::filesystem::path besideExecutable = std::filesystem::absolute(argv0, error).parent_path();
+        if (std::filesystem::exists(besideExecutable / ffmpeg_name, error))
+        {
+            directory = besideExecutable;
+        }
+    }
+    ffmpeg = directory.empty() ? std::filesystem::path{ffmpeg_name} : directory / ffmpeg_name;
+    ffprobe = directory.empty() ? std::filesystem::path{ffprobe_name} : directory / ffprobe_name;
+}
+
+const char* CalibrationProblem(vfdt::CalibrationCode code)
+{
+    switch (code)
+    {
+    case vfdt::CalibrationCode::Ok:
+        return "ok";
+    case vfdt::CalibrationCode::BadStepCount:
+        return "give between 1 and 8 cell sizes";
+    case vfdt::CalibrationCode::BadCellSize:
+        return "a cell size is too large for the screen (the grid needs at least 64 cells each way)";
+    case vfdt::CalibrationCode::BadTiming:
+        return "--seconds and --fps must give between 1 and 65535 frames per cell size";
+    case vfdt::CalibrationCode::BadBitsPerCell:
+        return "--colors must be 2 or 4";
+    }
+    return "unknown problem";
+}
+
+void PrintCalibrationReport(const vfdt::CalibrationReport& report)
+{
+    if (!report.found)
+    {
+        std::printf("no calibration frame was read in %llu images.\n", static_cast<unsigned long long>(report.captures));
+        std::printf("check that the whole screen is in view and in focus, that the video shows vfdt calibrate show,\n"
+                    "and that --colors matches. If it still fails, try --cells 16,14,12 to find a size that reads at all.\n");
+        return;
+    }
+    std::printf("%llu images, %d colours, %.1f frames/s; %llu images outside the calibration\n\n",
+                static_cast<unsigned long long>(report.captures), 1 << report.bitsPerCell, report.displayFps,
+                static_cast<unsigned long long>(report.unattributed));
+    std::printf(" cell  grid       bytes/frame  images  read  blend  lost   yield  errors/cw avg max  est. MB/min\n");
+    for (std::size_t s = 0; s < report.steps.size(); ++s)
+    {
+        const vfdt::CalibrationStep& step = report.steps[s];
+        char grid[32] = "-";
+        if (step.gridWidth > 0)
+        {
+            std::snprintf(grid, sizeof(grid), "%dx%d", step.gridWidth, step.gridHeight);
+        }
+        const char* verdict = step.reliable ? "ok" : "";
+        if (step.captures == 0)
+        {
+            verdict = "not in the recording";
+        }
+        else if (step.framesRead == 0)
+        {
+            verdict = "unreadable";
+        }
+        std::printf(" %3d   %-10s %11zu  %6llu %5llu  %5llu %5llu  %5.1f%%  %13.1f %3d  %11.1f  %s\n", step.cellPixels, grid,
+                    step.payloadBytes, static_cast<unsigned long long>(step.captures), static_cast<unsigned long long>(step.framesRead),
+                    static_cast<unsigned long long>(step.blendedOrTorn), static_cast<unsigned long long>(step.notLocated),
+                    100.0 * step.frameYield, step.meanCorrectedBytes, step.maxCorrectedBytes,
+                    step.bytesPerSecond * 60.0 / (1024.0 * 1024.0), verdict);
+    }
+    std::printf("\nyield: share of the data shown that was read at least once. errors/cw: bytes Reed-Solomon fixed per\n"
+                "codeword (it can fix %d). A size is ok at %.0f%% yield, average errors at most %.0f and worst at most %d.\n\n",
+                vfdt::rs_parity_bytes / 2, 100.0 * vfdt::calibration_target_yield, vfdt::calibration_mean_error_limit,
+                vfdt::calibration_worst_error_limit);
+    if (report.recommendedStep < 0)
+    {
+        std::printf("no cell size was reliable. Hold the phone steadier (a tripod helps), fill more of the frame with the\n"
+                    "screen, check focus, dim the room lights, or try larger cells or --colors 2.\n");
+        return;
+    }
+    const vfdt::CalibrationStep& best = report.steps[static_cast<std::size_t>(report.recommendedStep)];
+    std::printf("recommended: --cell %d (about %.1f MB/min)\n", best.cellPixels, best.bytesPerSecond * 60.0 / (1024.0 * 1024.0));
+    std::printf("  vfdt play <file> --cell %d --colors %d --fps %.0f\n", best.cellPixels, 1 << report.bitsPerCell, report.displayFps);
+    std::printf("for large transfers leave some margin: the next larger cell size is safer if lighting or distance may change.\n");
+}
+
+struct CalibrationOptions
+{
+    vfdt::CalibrationPlan plan{};
+    double seconds{3.0};
+    vfdt::PlayerConfig player{};
+    vfdt::SimulationConfig simulation{};
+};
+
+// Shared parser for calibrate show and calibrate simulate; simulate also takes the camera options.
+bool ParseCalibrationOption(std::string_view option, std::string_view value, bool simulate, CalibrationOptions& options, bool& known)
+{
+    known = true;
+    if (option == "--cells")
+    {
+        return ParseCellList(value, options.plan.cellSizes);
+    }
+    if (option == "--colors")
+    {
+        return ParseColors(value, options.plan.bitsPerCell);
+    }
+    if (option == "--seconds")
+    {
+        return ParseDouble(value, options.seconds) && options.seconds > 0.0;
+    }
+    if (option == "--fps")
+    {
+        return ParseDouble(value, options.plan.displayFps) && options.plan.displayFps > 0.0;
+    }
+    if (!simulate && option == "--window")
+    {
+        return ParseSize(value, options.player.windowWidth, options.player.windowHeight);
+    }
+    if (simulate)
+    {
+        vfdt::SimulationConfig& config = options.simulation;
+        if (option == "--screen")
+        {
+            return ParseSize(value, options.plan.screenWidth, options.plan.screenHeight);
+        }
+        if (option == "--camera")
+        {
+            return ParseSize(value, config.camera.width, config.camera.height);
+        }
+        if (option == "--camera-fps")
+        {
+            return ParseDouble(value, config.cameraFps) && config.cameraFps > 0.0;
+        }
+        if (option == "--blur")
+        {
+            return ParseDouble(value, config.camera.blurSigma);
+        }
+        if (option == "--noise")
+        {
+            return ParseDouble(value, config.camera.noiseSigma);
+        }
+        if (option == "--tilt")
+        {
+            return ParseDouble(value, config.camera.tilt);
+        }
+        if (option == "--coverage")
+        {
+            return ParseDouble(value, config.camera.coverage);
+        }
+        if (option == "--seed")
+        {
+            int seed = 0;
+            const bool ok = ParseInt(value, seed);
+            config.camera.seed = static_cast<std::uint32_t>(seed);
+            return ok;
+        }
+    }
+    known = false;
+    return false;
+}
+
+int ParseCalibrationOptions(int argc, char** argv, bool simulate, CalibrationOptions& options)
+{
+    for (int i = 3; i < argc; i += 2)
+    {
+        if (i + 1 >= argc)
+        {
+            std::fprintf(stderr, "missing value for %s\n", argv[i]);
+            return exit_usage;
+        }
+        bool known = true;
+        const bool ok = ParseCalibrationOption(argv[i], argv[i + 1], simulate, options, known);
+        if (!known)
+        {
+            std::fprintf(stderr, "unknown option %s\n", argv[i]);
+            return exit_usage;
+        }
+        if (!ok)
+        {
+            std::fprintf(stderr, "bad value for %s: %s\n", argv[i], argv[i + 1]);
+            return exit_usage;
+        }
+    }
+    return exit_ok;
+}
+
+int RunCalibrateShow(int argc, char** argv)
+{
+    CalibrationOptions options{};
+    if (const int parsed = ParseCalibrationOptions(argc, argv, false, options); parsed != exit_ok)
+    {
+        return parsed;
+    }
+    options.player.displayFps = options.plan.displayFps;
+    vfdt::ScreenInfo screen{};
+    const vfdt::PlayCode queried = vfdt::QueryScreen(options.player, screen);
+    if (queried == vfdt::PlayCode::Unsupported)
+    {
+        std::fprintf(stderr, "the player is only available on Windows\n");
+        return exit_failed;
+    }
+    if (queried != vfdt::PlayCode::Ok)
+    {
+        std::fprintf(stderr, "cannot find the primary display\n");
+        return exit_failed;
+    }
+
+    // The player rounds the frame rate to whole refreshes; the frames must carry the rate actually shown.
+    const int refreshesPerFrame = std::max(1, static_cast<int>(std::lround(screen.refreshRate / options.plan.displayFps)));
+    options.plan.displayFps = static_cast<double>(screen.refreshRate) / refreshesPerFrame;
+    options.plan.screenWidth = screen.width;
+    options.plan.screenHeight = screen.height;
+    options.plan.framesPerStep = std::max(1, static_cast<int>(std::lround(options.seconds * options.plan.displayFps)));
+    vfdt::CalibrationRenderer renderer{};
+    const vfdt::CalibrationCode configured = renderer.Configure(options.plan);
+    if (configured != vfdt::CalibrationCode::Ok)
+    {
+        std::fprintf(stderr, "%s\n", CalibrationProblem(configured));
+        return exit_usage;
+    }
+    const double cycleSeconds = static_cast<double>(renderer.FramesPerCycle()) / options.plan.displayFps;
+    std::printf("screen %dx%d at %d Hz, %.1f frames/s, %d colours; cell sizes:", screen.width, screen.height, screen.refreshRate,
+                options.plan.displayFps, 1 << options.plan.bitsPerCell);
+    for (const int cell : options.plan.cellSizes)
+    {
+        std::printf(" %d", cell);
+    }
+    std::printf("\none cycle = %.0f s. Place the phone where it will be for real transfers, start recording at 60 fps,\n"
+                "press Space, record one full cycle plus a few seconds, then: vfdt calibrate check <video>\n"
+                "Space pauses, Esc quits.\n",
+                cycleSeconds);
+
+    const vfdt::FrameSource source = [&renderer](std::uint64_t index)
+    {
+        return renderer.Render(index);
+    };
+    vfdt::PlayerStatus status{};
+    const vfdt::PlayerProgress progress = [&renderer](const vfdt::PlayerStatus& current)
+    {
+        const std::uint64_t shown = current.framesShown > 0 ? current.framesShown - 1 : 0;
+        const std::uint64_t cycle = shown / std::max<std::uint64_t>(1, renderer.FramesPerCycle());
+        std::printf("\r  %s  cell %2d px  cycle %llu      ", current.paused ? "paused " : "playing", renderer.CellPixelsAt(shown),
+                    static_cast<unsigned long long>(cycle + 1));
+        std::fflush(stdout);
+    };
+    if (vfdt::PlayFrames(source, options.player, status, progress) != vfdt::PlayCode::Ok)
+    {
+        std::fprintf(stderr, "\ncannot open a window on the primary display\n");
+        return exit_failed;
+    }
+    std::printf("\nshowed %llu frames\n", static_cast<unsigned long long>(status.framesShown));
+    return exit_ok;
+}
+
+int RunCalibrateCheck(int argc, char** argv)
+{
+    std::vector<std::filesystem::path> inputs;
+    std::filesystem::path ffmpegDirectory{};
+    int bitsPerCell = 2;
+    int threads = static_cast<int>(std::max(1U, std::thread::hardware_concurrency()));
+    int rawWidth = 0;
+    int rawHeight = 0;
+    for (int i = 3; i < argc; ++i)
+    {
+        const std::string_view option{argv[i]};
+        if (!option.starts_with("--"))
+        {
+            inputs.emplace_back(argv[i]);
+            continue;
+        }
+        if (i + 1 >= argc)
+        {
+            std::fprintf(stderr, "missing value for %s\n", argv[i]);
+            return exit_usage;
+        }
+        const std::string_view value{argv[++i]};
+        bool ok = true;
+        if (option == "--colors")
+        {
+            ok = ParseColors(value, bitsPerCell);
+        }
+        else if (option == "--ffmpeg")
+        {
+            ffmpegDirectory = std::filesystem::path{std::string{value}};
+        }
+        else if (option == "--threads")
+        {
+            ok = ParseInt(value, threads) && threads > 0;
+        }
+        else if (option == "--raw")
+        {
+            ok = ParseSize(value, rawWidth, rawHeight);
+        }
+        else
+        {
+            std::fprintf(stderr, "unknown option %s\n", argv[i - 1]);
+            return exit_usage;
+        }
+        if (!ok)
+        {
+            std::fprintf(stderr, "bad value for %s: %s\n", argv[i - 1], argv[i]);
+            return exit_usage;
+        }
+    }
+    if (inputs.empty())
+    {
+        PrintUsage();
+        return exit_usage;
+    }
+    std::filesystem::path ffmpeg{};
+    std::filesystem::path ffprobe{};
+    ResolveFfmpeg(argv[0], ffmpegDirectory, ffmpeg, ffprobe);
+
+    vfdt::CalibrationAnalyzer analyzer{bitsPerCell, threads};
+    std::vector<vfdt::Image> batch(static_cast<std::size_t>(threads));
+    std::uint64_t images = 0;
+    auto lastProgress = std::chrono::steady_clock::now();
+    for (const std::filesystem::path& input : inputs)
+    {
+        vfdt::VideoSource source{};
+        const vfdt::VideoCode opened = rawWidth > 0 ? source.OpenRaw(input, rawWidth, rawHeight) : source.OpenVideo(ffmpeg, ffprobe, input);
+        if (opened == vfdt::VideoCode::ProbeFailed)
+        {
+            std::fprintf(stderr, "cannot read %s with %s: is FFmpeg installed (use --ffmpeg <dir>) and is it a video?\n",
+                         input.string().c_str(), ffprobe.string().c_str());
+            return exit_failed;
+        }
+        if (opened != vfdt::VideoCode::Ok)
+        {
+            std::fprintf(stderr, "cannot open %s\n", input.string().c_str());
+            return exit_failed;
+        }
+        std::printf("measuring %s (%dx%d) with %d threads\n", input.string().c_str(), source.Width(), source.Height(), threads);
+        bool ended = false;
+        while (!ended)
+        {
+            std::size_t filled = 0;
+            while (filled < batch.size() && source.ReadFrame(batch[filled]) == vfdt::VideoCode::Ok)
+            {
+                ++filled;
+            }
+            ended = filled < batch.size();
+            analyzer.AcceptImages(std::span<const vfdt::Image>{batch.data(), filled});
+            images += filled;
+            const auto now = std::chrono::steady_clock::now();
+            if (now - lastProgress >= std::chrono::seconds{2})
+            {
+                lastProgress = now;
+                std::printf("  %llu images\n", static_cast<unsigned long long>(images));
+            }
+        }
+    }
+    const vfdt::CalibrationReport report = analyzer.Report();
+    PrintCalibrationReport(report);
+    return report.recommendedStep >= 0 ? exit_ok : exit_failed;
+}
+
+int RunCalibrateSimulate(int argc, char** argv)
+{
+    CalibrationOptions options{};
+    options.simulation.camera.width = 1920;
+    options.simulation.camera.height = 1080;
+    if (const int parsed = ParseCalibrationOptions(argc, argv, true, options); parsed != exit_ok)
+    {
+        return parsed;
+    }
+    options.plan.framesPerStep = std::max(1, static_cast<int>(std::lround(options.seconds * options.plan.displayFps)));
+    vfdt::CalibrationRenderer renderer{};
+    const vfdt::CalibrationCode configured = renderer.Configure(options.plan);
+    if (configured != vfdt::CalibrationCode::Ok)
+    {
+        std::fprintf(stderr, "%s\n", CalibrationProblem(configured));
+        return exit_usage;
+    }
+    const vfdt::CameraModel& camera = options.simulation.camera;
+    std::printf("simulating screen %dx%d, camera %dx%d at %.0f fps, blur %.1f, noise %.1f\n", options.plan.screenWidth,
+                options.plan.screenHeight, camera.width, camera.height, options.simulation.cameraFps, camera.blurSigma, camera.noiseSigma);
+    vfdt::CalibrationAnalyzer analyzer{options.plan.bitsPerCell, static_cast<int>(std::max(1U, std::thread::hardware_concurrency()))};
+    // Run into the next cycle, as a real recording should, so an unreadable last size sits between readable frames.
+    const std::uint64_t frames = renderer.FramesPerCycle() + static_cast<std::uint64_t>(options.plan.framesPerStep);
+    vfdt::SimulateCalibration(renderer, camera, options.simulation.cameraFps, options.plan.displayFps, frames, analyzer);
+    const vfdt::CalibrationReport report = analyzer.Report();
+    PrintCalibrationReport(report);
+    return report.recommendedStep >= 0 ? exit_ok : exit_failed;
+}
+
+int RunCalibrate(int argc, char** argv)
+{
+    const std::string_view action = argc >= 3 ? std::string_view{argv[2]} : std::string_view{};
+    if (action == "show")
+    {
+        return RunCalibrateShow(argc, argv);
+    }
+    if (action == "check")
+    {
+        return RunCalibrateCheck(argc, argv);
+    }
+    if (action == "simulate")
+    {
+        return RunCalibrateSimulate(argc, argv);
+    }
+    PrintUsage();
+    return exit_usage;
 }
 
 bool ReadFile(const std::filesystem::path& path, std::vector<std::uint8_t>& out)
@@ -457,17 +897,9 @@ int RunDecode(int argc, char** argv)
         return exit_usage;
     }
 
-    if (ffmpegDirectory.empty())
-    {
-        std::error_code error;
-        const std::filesystem::path besideExecutable = std::filesystem::absolute(argv[0], error).parent_path();
-        if (std::filesystem::exists(besideExecutable / ffmpeg_name, error))
-        {
-            ffmpegDirectory = besideExecutable;
-        }
-    }
-    const std::filesystem::path ffmpeg = ffmpegDirectory.empty() ? std::filesystem::path{ffmpeg_name} : ffmpegDirectory / ffmpeg_name;
-    const std::filesystem::path ffprobe = ffmpegDirectory.empty() ? std::filesystem::path{ffprobe_name} : ffmpegDirectory / ffprobe_name;
+    std::filesystem::path ffmpeg{};
+    std::filesystem::path ffprobe{};
+    ResolveFfmpeg(argv[0], ffmpegDirectory, ffmpeg, ffprobe);
 
     vfdt::Receiver receiver{bitsPerCell, threads};
     std::vector<vfdt::Image> batch(static_cast<std::size_t>(threads));
@@ -735,6 +1167,10 @@ int main(int argc, char** argv)
     if (command == "simulate")
     {
         return RunSimulate(argc, argv);
+    }
+    if (command == "calibrate")
+    {
+        return RunCalibrate(argc, argv);
     }
     PrintUsage();
     return exit_usage;

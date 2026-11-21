@@ -29,6 +29,7 @@ struct FrameRead
     std::vector<std::uint8_t> payload;
     std::vector<bool> codewordOk;
     int correctedBytes{};
+    int maxCorrectedBytes{};
     int failedCodewords{};
     int packetsPerFrame{};
     std::size_t packetBytes{};
