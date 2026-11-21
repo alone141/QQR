@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Image.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -42,7 +44,33 @@ enum class PlayCode
     Unsupported,
 };
 
+struct ScreenInfo
+{
+    int width{};
+    int height{};
+    int refreshRate{};
+};
+
 using PlayerProgress = std::function<void(const PlayerStatus&)>;
+using FrameSource = std::function<Image(std::uint64_t frameIndex)>;
+
+/**
+ * @brief Measure the area frames will be shown in: the primary monitor, or a window of the configured size.
+ * @param config Only windowWidth and windowHeight are used.
+ * @param out Receives the area in physical pixels and the monitor refresh rate.
+ * @return PlayCode::Ok on success, otherwise why there is no display.
+ */
+PlayCode QueryScreen(const PlayerConfig& config, ScreenInfo& out);
+
+/**
+ * @brief Show frames from @p source until Esc. Starts paused on frame 0; Space starts and pauses.
+ * @param source Draws frame n; called in order from a worker thread. Frames should match the QueryScreen size.
+ * @param config Only displayFps, windowWidth and windowHeight are used.
+ * @param status Layout fields are kept as given; screen, timing, framesShown and paused are filled in.
+ * @param progress Called about once per second while playing and once after the window opens; may be empty.
+ * @return PlayCode::Ok after the user closes the player, otherwise why it could not start.
+ */
+PlayCode PlayFrames(const FrameSource& source, const PlayerConfig& config, PlayerStatus& status, const PlayerProgress& progress);
 
 /**
  * @brief Show @p content as frames on the primary monitor until Esc. Starts paused on the first frame; Space starts and pauses.

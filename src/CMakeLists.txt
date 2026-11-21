@@ -1,4 +1,5 @@
 add_library(vfdt_core
+    Calibration.cpp
     CameraSimulator.cpp
     Checksum.cpp
     FountainDecoder.cpp

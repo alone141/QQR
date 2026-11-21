@@ -615,6 +615,7 @@ ReadCode FrameReader::ReadFrame(const Image& image, FrameRead& out) const
     out.payload.assign(layout.PayloadBytes(), 0);
     out.codewordOk.assign(codewords, false);
     out.correctedBytes = 0;
+    out.maxCorrectedBytes = 0;
     out.failedCodewords = 0;
     out.packetsPerFrame = layout.PacketsPerFrame();
     out.packetBytes = layout.PacketBytes();
@@ -630,6 +631,7 @@ ReadCode FrameReader::ReadFrame(const Image& image, FrameRead& out) const
         {
             out.codewordOk[c] = true;
             out.correctedBytes += corrected;
+            out.maxCorrectedBytes = std::max(out.maxCorrectedBytes, corrected);
         }
         else
         {

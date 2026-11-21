@@ -6,7 +6,6 @@
 #include "Transmitter.hpp"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -47,9 +46,8 @@ struct ReadyFrame
 class FrameQueue
 {
 public:
-    FrameQueue(const Transmitter& transmitter, const FrameRenderer& renderer)
-        : transmitter{transmitter}
-        , renderer{renderer}
+    explicit FrameQueue(const FrameSource& source)
+        : source{source}
         , frames{}
         , stopping{false}
         , worker{[this]() { Produce(); }}
@@ -84,7 +82,7 @@ private:
     {
         for (std::uint64_t index = 0;; ++index)
         {
-            const Image image = renderer.Render(transmitter.FramePayload(index), static_cast<std::uint32_t>(index));
+            const Image image = source(index);
             ReadyFrame frame{index, image.width, image.height, std::vector<std::uint32_t>(static_cast<std::size_t>(image.width) * static_cast<std::size_t>(image.height))};
             for (std::size_t i = 0; i < frame.pixels.size(); ++i)
             {
@@ -103,8 +101,7 @@ private:
         }
     }
 
-    const Transmitter& transmitter;
-    const FrameRenderer& renderer;
+    const FrameSource& source;
     std::mutex mutex;
     std::condition_variable changed;
     std::deque<ReadyFrame> frames;
@@ -189,9 +186,14 @@ void WaitForRefresh(int refreshRate)
     }
 }
 
+bool IsWindowed(const PlayerConfig& config)
+{
+    return config.windowWidth > 0 && config.windowHeight > 0;
+}
+
 } // namespace
 
-PlayCode PlayContent(std::span<const std::uint8_t> content, const PlayerConfig& config, PlayerStatus& status, const PlayerProgress& progress)
+PlayCode QueryScreen(const PlayerConfig& config, ScreenInfo& out)
 {
     // Without this Windows scales the window on high-DPI screens and blurs every cell.
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -205,34 +207,35 @@ PlayCode PlayContent(std::span<const std::uint8_t> content, const PlayerConfig& 
     }
     DEVMODEW mode{};
     mode.dmSize = sizeof(mode);
-    const int refreshRate = EnumDisplaySettingsW(nullptr, ENUM_CURRENT_SETTINGS, &mode) && mode.dmDisplayFrequency > 1
-                                ? static_cast<int>(mode.dmDisplayFrequency)
-                                : 60;
-
-    const bool windowed = config.windowWidth > 0 && config.windowHeight > 0;
+    out.refreshRate = EnumDisplaySettingsW(nullptr, ENUM_CURRENT_SETTINGS, &mode) && mode.dmDisplayFrequency > 1
+                          ? static_cast<int>(mode.dmDisplayFrequency)
+                          : 60;
     const RECT monitorRect = monitorInfo.rcMonitor;
-    const int screenWidth = windowed ? config.windowWidth : monitorRect.right - monitorRect.left;
-    const int screenHeight = windowed ? config.windowHeight : monitorRect.bottom - monitorRect.top;
+    out.width = IsWindowed(config) ? config.windowWidth : monitorRect.right - monitorRect.left;
+    out.height = IsWindowed(config) ? config.windowHeight : monitorRect.bottom - monitorRect.top;
+    return PlayCode::Ok;
+}
 
-    FrameLayout layout{};
-    if (layout.Configure(GridCells(screenWidth, config.cellPixels), GridCells(screenHeight, config.cellPixels), config.bitsPerCell) != LayoutCode::Ok)
+PlayCode PlayFrames(const FrameSource& source, const PlayerConfig& config, PlayerStatus& status, const PlayerProgress& progress)
+{
+    ScreenInfo screen{};
+    if (QueryScreen(config, screen) != PlayCode::Ok)
     {
-        return PlayCode::BadLayout;
+        return PlayCode::NoDisplay;
     }
-    const Transmitter transmitter{content, SessionIdFor(content), layout, config.repairRatio};
-    const FrameRenderer renderer{layout, config.cellPixels};
+    const HMONITOR monitor = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFO monitorInfo{};
+    monitorInfo.cbSize = sizeof(monitorInfo);
+    GetMonitorInfoW(monitor, &monitorInfo);
+    const RECT monitorRect = monitorInfo.rcMonitor;
+    const bool windowed = IsWindowed(config);
 
-    status = PlayerStatus{};
-    status.screenWidth = screenWidth;
-    status.screenHeight = screenHeight;
-    status.gridWidth = layout.GridWidth();
-    status.gridHeight = layout.GridHeight();
-    status.payloadBytes = layout.PayloadBytes();
-    status.packetsPerFrame = layout.PacketsPerFrame();
-    status.framesPerPass = transmitter.FramesPerPass();
-    status.refreshRate = refreshRate;
-    status.refreshesPerFrame = std::max(1, static_cast<int>(std::lround(refreshRate / config.displayFps)));
-    status.framesPerSecond = static_cast<double>(refreshRate) / status.refreshesPerFrame;
+    status.screenWidth = screen.width;
+    status.screenHeight = screen.height;
+    status.refreshRate = screen.refreshRate;
+    status.refreshesPerFrame = std::max(1, static_cast<int>(std::lround(screen.refreshRate / config.displayFps)));
+    status.framesPerSecond = static_cast<double>(screen.refreshRate) / status.refreshesPerFrame;
+    status.framesShown = 0;
     status.paused = true;
 
     const HINSTANCE instance = GetModuleHandleW(nullptr);
@@ -243,7 +246,7 @@ PlayCode PlayContent(std::span<const std::uint8_t> content, const PlayerConfig& 
     windowClass.lpszClassName = window_class_name;
     RegisterClassW(&windowClass);
 
-    RECT windowRect{0, 0, screenWidth, screenHeight};
+    RECT windowRect{0, 0, screen.width, screen.height};
     DWORD style = WS_POPUP;
     DWORD extendedStyle = WS_EX_TOPMOST;
     int left = monitorRect.left;
@@ -272,7 +275,7 @@ PlayCode PlayContent(std::span<const std::uint8_t> content, const PlayerConfig& 
     }
 
     {
-        FrameQueue queue{transmitter, renderer};
+        FrameQueue queue{source};
         ReadyFrame current = queue.Take();
         state.current = &current;
         Present(window, current, true);
@@ -299,16 +302,19 @@ PlayCode PlayContent(std::span<const std::uint8_t> content, const PlayerConfig& 
             status.paused = state.paused;
             if (state.paused)
             {
-                WaitForRefresh(refreshRate);
+                WaitForRefresh(screen.refreshRate);
             }
             else
             {
-                current = queue.Take();
-                Present(window, current, false);
+                ReadyFrame next = queue.Take();
+                // A smaller frame would leave the edges of a larger one behind.
+                const bool resized = next.width != current.width || next.height != current.height;
+                current = std::move(next);
+                Present(window, current, resized);
                 ++status.framesShown;
                 for (int i = 0; i < status.refreshesPerFrame; ++i)
                 {
-                    WaitForRefresh(refreshRate);
+                    WaitForRefresh(screen.refreshRate);
                 }
             }
 
@@ -331,7 +337,47 @@ PlayCode PlayContent(std::span<const std::uint8_t> content, const PlayerConfig& 
     return PlayCode::Ok;
 }
 
+PlayCode PlayContent(std::span<const std::uint8_t> content, const PlayerConfig& config, PlayerStatus& status, const PlayerProgress& progress)
+{
+    ScreenInfo screen{};
+    if (QueryScreen(config, screen) != PlayCode::Ok)
+    {
+        return PlayCode::NoDisplay;
+    }
+    FrameLayout layout{};
+    if (layout.Configure(GridCells(screen.width, config.cellPixels), GridCells(screen.height, config.cellPixels), config.bitsPerCell) != LayoutCode::Ok)
+    {
+        return PlayCode::BadLayout;
+    }
+    const Transmitter transmitter{content, SessionIdFor(content), layout, config.repairRatio};
+    const FrameRenderer renderer{layout, config.cellPixels};
+    const FrameSource source = [&transmitter, &renderer](std::uint64_t index)
+    {
+        return renderer.Render(transmitter.FramePayload(index), static_cast<std::uint32_t>(index));
+    };
+
+    status = PlayerStatus{};
+    status.gridWidth = layout.GridWidth();
+    status.gridHeight = layout.GridHeight();
+    status.payloadBytes = layout.PayloadBytes();
+    status.packetsPerFrame = layout.PacketsPerFrame();
+    status.framesPerPass = transmitter.FramesPerPass();
+    return PlayFrames(source, config, status, progress);
+}
+
 #else
+
+PlayCode QueryScreen(const PlayerConfig&, ScreenInfo& out)
+{
+    out = ScreenInfo{};
+    return PlayCode::Unsupported;
+}
+
+PlayCode PlayFrames(const FrameSource&, const PlayerConfig&, PlayerStatus& status, const PlayerProgress&)
+{
+    status.framesShown = 0;
+    return PlayCode::Unsupported;
+}
 
 PlayCode PlayContent(std::span<const std::uint8_t>, const PlayerConfig&, PlayerStatus& status, const PlayerProgress&)
 {

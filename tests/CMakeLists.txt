@@ -1,5 +1,6 @@
 include(GoogleTest)
 add_executable(vfdt_tests
+    CalibrationTest.cpp
     CameraSimulatorTest.cpp
     ChecksumTest.cpp
     FountainDecoderTest.cpp
