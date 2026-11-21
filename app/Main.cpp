@@ -227,7 +227,8 @@ void PrintCalibrationReport(const vfdt::CalibrationReport& report)
                     step.bytesPerSecond * 60.0 / (1024.0 * 1024.0), verdict);
     }
     std::printf("\nyield: share of the data shown that was read at least once. errors/cw: bytes Reed-Solomon fixed per\n"
-                "codeword (it can fix %d). A size is ok at %.0f%% yield, average errors at most %.0f and worst at most %d.\n\n",
+                "codeword (it can fix %d), in the best capture of each frame. A size is ok at %.0f%% yield, average\n"
+                "errors at most %.0f and worst at most %d.\n\n",
                 vfdt::rs_parity_bytes / 2, 100.0 * vfdt::calibration_target_yield, vfdt::calibration_mean_error_limit,
                 vfdt::calibration_worst_error_limit);
     if (report.recommendedStep < 0)
