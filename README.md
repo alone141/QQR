@@ -1,11 +1,11 @@
-# VFDT — visual file transfer
+# QQR — visual file transfer
 
-VFDT moves a file from one computer to another through a screen and a phone camera, with no cable, network or
+QQR moves a file from one computer to another through a screen and a phone camera, with no cable, network or
 storage device. The sending PC shows the file as a stream of dense coloured frames; a phone films the screen; the
 receiving PC decodes the video back into the original file and checks its SHA-256.
 
 It handles anything from a few kilobytes (one photo of one frame is enough) to files of 1–2 GB (a video of a few
-minutes to an hour, depending on the camera). One Windows executable does both ends.
+minutes to an hour, depending on the camera). One Windows executable, `vfdt.exe`, does both ends.
 
 ## How it works
 
@@ -90,7 +90,7 @@ writes `small.txt.png`, which holds the whole file. Show it full screen at 100% 
 `vfdt simulate <file>` and `vfdt calibrate simulate` send frames through a simulated camera with blur, noise, tilt,
 dropped frames and rolling-shutter switching, and decode the result.
 
-Run `vfdt` with no arguments for every command and option.
+Run `vfdt help` for every command and option.
 
 ## Camera tips
 
