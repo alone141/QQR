@@ -9,12 +9,16 @@ Run every command from this folder. `vfdt` is `..\build\app\Release\vfdt.exe`.
 
 `folder.tar.gz` packs `folder\`: two text files and 1.5 MB of random data, so it does not compress further.
 
-## 1. Calibrate (about 30 s)
+## 1. Calibrate (about 90 s)
 
-1. Mount the phone where it will stay, with the whole screen in view. Set it to 60 fps.
-2. Run `vfdt calibrate show`, start recording, press Space, wait one full cycle (21 s) plus 5 s, press Esc.
+1. Mount the phone where it will stay, with the whole screen in view. Set it to 4K at 60 fps.
+2. Run `vfdt calibrate show`. It tries 7 cell sizes with 4 and 2 colours at 30 and 20 frames/s, 3 s each.
+   Start recording, press Space, wait one full cycle (84 s) plus 5 s, press Esc.
 3. Copy the video here and run `vfdt calibrate check calib.mp4`.
-4. Note the recommended `--cell` value. Steps 2 and 3 below use it as `N`.
+4. Note the recommended `--cell`, `--colors` and `--fps`. Step 3 below uses them as `N`, `C` and `F`.
+
+To narrow or widen the sweep, give lists, up to 32 combinations in all; for example
+`vfdt calibrate show --cells 6,5,4,3 --colors 4,2 --fps 30,20,15`. `check` reads the plan from the frames.
 
 ## 2. Single photo
 
@@ -25,9 +29,9 @@ Run every command from this folder. `vfdt` is `..\build\app\Release\vfdt.exe`.
 
 ## 3. Video transfer
 
-1. Run `vfdt play folder.tar.gz --cell N`. It prints the length of one pass.
+1. Run `vfdt play folder.tar.gz --cell N --colors C --fps F`. It prints the length of one pass.
 2. Start recording, press Space, record one pass plus about 10 s, press Esc.
-3. Run `vfdt decode video.mp4 --out received`.
+3. Run `vfdt decode video.mp4 --colors C --out received`.
 4. Pass: it prints `SHA-256 verified`, and `tar -xzf received\folder.tar.gz` gives back `folder\`.
 5. If it lists missing blocks: run `play` again, record another pass, and decode both videos together:
    `vfdt decode video.mp4 video2.mp4 --out received`.
