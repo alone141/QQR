@@ -76,31 +76,58 @@ bool ParsePositive(std::string_view text, int& out)
     return error == std::errc{} && end == text.data() + text.size() && out > 0;
 }
 
-bool ProbeFrameSize(const std::filesystem::path& ffprobe, const std::filesystem::path& video, int& width, int& height)
+// A rate of "0/0" (a still image) or one that does not parse gives 0.
+double ParseRate(std::string_view text)
 {
-    const CommandString command =
-        Quote(ffprobe) + Widen(" -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x ") + Quote(video);
+    const std::size_t slash = text.find('/');
+    int numerator = 0;
+    int denominator = 0;
+    if (slash == std::string_view::npos || !ParsePositive(text.substr(0, slash), numerator) || !ParsePositive(text.substr(slash + 1), denominator))
+    {
+        return 0.0;
+    }
+    return static_cast<double>(numerator) / denominator;
+}
+
+bool ProbeFrameSize(const std::filesystem::path& ffprobe, const std::filesystem::path& video, int& width, int& height, double& frameRate)
+{
+    const CommandString command = Quote(ffprobe) +
+                                  Widen(" -v error -select_streams v:0 -show_entries stream=width,height,avg_frame_rate:format=format_name"
+                                        " -of csv=p=0:s=x ") +
+                                  Quote(video);
     std::FILE* pipe = OpenPipe(command);
     if (pipe == nullptr)
     {
         return false;
     }
     std::array<char, 128> buffer{};
+    std::array<char, 128> format{};
     const bool gotLine = std::fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr;
+    const bool gotFormat = gotLine && std::fgets(format.data(), static_cast<int>(format.size()), pipe) != nullptr;
     ClosePipe(pipe);
     if (!gotLine)
     {
         return false;
     }
+    // Still images come through image demuxers (image2, png_pipe, jpeg_pipe, ...) that report a default 25 fps.
+    const std::string_view formatName{format.data()};
+    const bool still = gotFormat && (formatName.find("image") != std::string_view::npos || formatName.find("_pipe") != std::string_view::npos);
 
-    // Expected output: "3840x2160" followed by a line break.
+    // Expected output: "3840x2160x60/1" followed by a line break.
     std::string_view line{buffer.data()};
     while (!line.empty() && (line.back() == '\n' || line.back() == '\r' || line.back() == ' '))
     {
         line.remove_suffix(1);
     }
-    const std::size_t split = line.find('x');
-    return split != std::string_view::npos && ParsePositive(line.substr(0, split), width) && ParsePositive(line.substr(split + 1), height);
+    const std::size_t first = line.find('x');
+    if (first == std::string_view::npos || !ParsePositive(line.substr(0, first), width))
+    {
+        return false;
+    }
+    const std::string_view rest = line.substr(first + 1);
+    const std::size_t second = rest.find('x');
+    frameRate = second == std::string_view::npos || still ? 0.0 : ParseRate(rest.substr(second + 1));
+    return ParsePositive(rest.substr(0, second), height);
 }
 
 } // namespace
@@ -121,6 +148,7 @@ VideoSource::VideoSource()
     : stream{nullptr, StreamCloser{}}
     , width{0}
     , height{0}
+    , frameRate{0.0}
 {
 }
 
@@ -129,9 +157,11 @@ VideoCode VideoSource::OpenVideo(const std::filesystem::path& ffmpeg, const std:
     stream.reset();
     width = 0;
     height = 0;
+    frameRate = 0.0;
     int probedWidth = 0;
     int probedHeight = 0;
-    if (!ProbeFrameSize(ffprobe, video, probedWidth, probedHeight))
+    double probedRate = 0.0;
+    if (!ProbeFrameSize(ffprobe, video, probedWidth, probedHeight, probedRate))
     {
         return VideoCode::ProbeFailed;
     }
@@ -146,6 +176,7 @@ VideoCode VideoSource::OpenVideo(const std::filesystem::path& ffmpeg, const std:
     stream = std::unique_ptr<std::FILE, StreamCloser>{pipe, StreamCloser{true}};
     width = probedWidth;
     height = probedHeight;
+    frameRate = probedRate;
     return VideoCode::Ok;
 }
 
@@ -154,6 +185,7 @@ VideoCode VideoSource::OpenRaw(const std::filesystem::path& file, int frameWidth
     stream.reset();
     width = 0;
     height = 0;
+    frameRate = 0.0;
     std::FILE* opened = OpenFile(file);
     if (opened == nullptr)
     {
@@ -187,6 +219,11 @@ int VideoSource::Width() const
 int VideoSource::Height() const
 {
     return height;
+}
+
+double VideoSource::FrameRate() const
+{
+    return frameRate;
 }
 
 } // namespace vfdt

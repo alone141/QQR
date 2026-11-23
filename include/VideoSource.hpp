@@ -62,6 +62,12 @@ public:
      */
     int Height() const;
 
+    /**
+     * @brief Return the average frame rate ffprobe reported.
+     * @return Frames per second, or 0 for raw files, still images, and when nothing is open.
+     */
+    double FrameRate() const;
+
 private:
     struct StreamCloser
     {
@@ -72,6 +78,7 @@ private:
     std::unique_ptr<std::FILE, StreamCloser> stream;
     int width;
     int height;
+    double frameRate;
 };
 
 } // namespace vfdt

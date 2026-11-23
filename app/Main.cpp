@@ -73,6 +73,27 @@ bool ParseColors(std::string_view text, int& bitsPerCell)
     return true;
 }
 
+constexpr int recommended_video_side = 3840;
+constexpr double recommended_video_fps = 50.0;
+
+// Phones fall back to 1080p 30 fps easily; say so, since small cells then stop reading.
+void WarnAboutRecording(const vfdt::VideoSource& source)
+{
+    if (source.FrameRate() <= 0.0)
+    {
+        return;
+    }
+    std::printf("  recorded at %dx%d, %.1f fps\n", source.Width(), source.Height(), source.FrameRate());
+    if (std::max(source.Width(), source.Height()) < recommended_video_side)
+    {
+        std::printf("  warning: below 4K. Small cells need 4K (3840x2160); check the phone's video resolution setting.\n");
+    }
+    if (source.FrameRate() < recommended_video_fps)
+    {
+        std::printf("  warning: below 60 fps. Captures per shown frame drop, and motion blur and rolling-shutter skew grow.\n");
+    }
+}
+
 void PrintUsage()
 {
     std::puts(
@@ -490,6 +511,7 @@ int RunCalibrateCheck(int argc, char** argv)
             return exit_failed;
         }
         std::printf("measuring %s (%dx%d) with %d threads\n", input.string().c_str(), source.Width(), source.Height(), threads);
+        WarnAboutRecording(source);
         bool ended = false;
         while (!ended)
         {
@@ -922,6 +944,7 @@ int RunDecode(int argc, char** argv)
             return exit_failed;
         }
         std::printf("decoding %s (%dx%d) with %d threads\n", input.string().c_str(), source.Width(), source.Height(), threads);
+        WarnAboutRecording(source);
 
         bool ended = false;
         while (!ended && !receiver.Decoder().IsComplete())

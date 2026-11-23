@@ -40,6 +40,14 @@ TEST(VideoSourceTest, ReadsRawFramesThenEnds)
     EXPECT_EQ(source.ReadFrame(frame), vfdt::VideoCode::EndOfStream);
 }
 
+TEST(VideoSourceTest, RawFramesHaveNoFrameRate)
+{
+    const std::filesystem::path path = WriteRawFrames(4, 3, 1);
+    vfdt::VideoSource source{};
+    ASSERT_EQ(source.OpenRaw(path, 4, 3), vfdt::VideoCode::Ok);
+    EXPECT_EQ(source.FrameRate(), 0.0);
+}
+
 TEST(VideoSourceTest, MissingFileFailsToOpen)
 {
     vfdt::VideoSource source{};
