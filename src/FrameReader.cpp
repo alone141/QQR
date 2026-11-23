@@ -62,68 +62,96 @@ BinaryImage Binarize(const Image& image)
     const int width = image.width;
     const int height = image.height;
     const std::size_t pixelCount = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
-    std::vector<std::uint8_t> luma(pixelCount);
-    for (std::size_t i = 0; i < pixelCount; ++i)
+    const std::size_t rowBytes = static_cast<std::size_t>(width);
+
+    // A planar image starts with its luma plane; an RGB one needs it worked out.
+    std::vector<std::uint8_t> computedLuma;
+    const std::uint8_t* luma = image.pixels.data();
+    if (image.format == PixelFormat::kRgb24)
     {
-        const std::uint8_t* pixel = image.pixels.data() + 3 * i;
-        luma[i] = static_cast<std::uint8_t>((77U * pixel[0] + 150U * pixel[1] + 29U * pixel[2]) >> 8);
+        computedLuma.resize(pixelCount);
+        for (std::size_t i = 0; i < pixelCount; ++i)
+        {
+            const std::uint8_t* pixel = image.pixels.data() + 3 * i;
+            computedLuma[i] = static_cast<std::uint8_t>((77U * pixel[0] + 150U * pixel[1] + 29U * pixel[2]) >> 8);
+        }
+        luma = computedLuma.data();
     }
 
-    // Threshold each pixel against the mean of a wide window of tiles around it.
+    // Threshold each pixel against the mean of a wide window of tiles around it. The loops run tile by tile along
+    // each row, so the compiler can turn the inner ones into vector code.
     const int tilesX = (width + binarize_tile - 1) / binarize_tile;
     const int tilesY = (height + binarize_tile - 1) / binarize_tile;
-    const std::size_t stride = static_cast<std::size_t>(tilesX) + 1;
-    std::vector<std::uint64_t> tileSums(static_cast<std::size_t>(tilesX) * static_cast<std::size_t>(tilesY), 0);
-    std::vector<std::uint64_t> tileCounts(tileSums.size(), 0);
+    const std::size_t tileColumns = static_cast<std::size_t>(tilesX);
+    const std::size_t stride = tileColumns + 1;
+    std::vector<std::uint32_t> tileSums(tileColumns * static_cast<std::size_t>(tilesY), 0);
     for (int y = 0; y < height; ++y)
     {
-        for (int x = 0; x < width; ++x)
+        const std::uint8_t* row = luma + static_cast<std::size_t>(y) * rowBytes;
+        std::uint32_t* rowSums = tileSums.data() + static_cast<std::size_t>(y / binarize_tile) * tileColumns;
+        for (int tx = 0; tx < tilesX; ++tx)
         {
-            const std::size_t tile = static_cast<std::size_t>(y / binarize_tile) * static_cast<std::size_t>(tilesX) +
-                                     static_cast<std::size_t>(x / binarize_tile);
-            tileSums[tile] += luma[static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x)];
-            ++tileCounts[tile];
+            const int begin = tx * binarize_tile;
+            const int end = std::min(begin + binarize_tile, width);
+            std::uint32_t sum = 0;
+            for (int x = begin; x < end; ++x)
+            {
+                sum += row[x];
+            }
+            rowSums[tx] += sum;
         }
     }
     std::vector<std::uint64_t> sumTable(stride * (static_cast<std::size_t>(tilesY) + 1), 0);
-    std::vector<std::uint64_t> countTable(sumTable.size(), 0);
     for (int ty = 0; ty < tilesY; ++ty)
     {
         for (int tx = 0; tx < tilesX; ++tx)
         {
-            const std::size_t tile = static_cast<std::size_t>(ty) * static_cast<std::size_t>(tilesX) + static_cast<std::size_t>(tx);
+            const std::size_t tile = static_cast<std::size_t>(ty) * tileColumns + static_cast<std::size_t>(tx);
             const std::size_t here = (static_cast<std::size_t>(ty) + 1) * stride + static_cast<std::size_t>(tx) + 1;
             const std::size_t up = here - stride;
             sumTable[here] = tileSums[tile] + sumTable[up] + sumTable[here - 1] - sumTable[up - 1];
-            countTable[here] = tileCounts[tile] + countTable[up] + countTable[here - 1] - countTable[up - 1];
         }
     }
+
+    // A pixel is dark when it is below the window mean. Luma is a whole number, so that is the same as being below
+    // the mean rounded up, which fits a byte and keeps the comparison in integers.
     const int radius = std::max(2, std::max(width, height) / (12 * binarize_tile));
-    std::vector<double> thresholds(tileSums.size(), 0.0);
+    std::vector<std::uint8_t> thresholds(tileSums.size(), 0);
     for (int ty = 0; ty < tilesY; ++ty)
     {
+        const int tileY0 = std::max(0, ty - radius);
+        const int tileY1 = std::min(tilesY, ty + radius + 1);
+        const std::uint64_t windowRows = static_cast<std::uint64_t>(std::min(tileY1 * binarize_tile, height) - tileY0 * binarize_tile);
+        const std::size_t y0 = static_cast<std::size_t>(tileY0);
+        const std::size_t y1 = static_cast<std::size_t>(tileY1);
         for (int tx = 0; tx < tilesX; ++tx)
         {
-            const std::size_t x0 = static_cast<std::size_t>(std::max(0, tx - radius));
-            const std::size_t x1 = static_cast<std::size_t>(std::min(tilesX, tx + radius + 1));
-            const std::size_t y0 = static_cast<std::size_t>(std::max(0, ty - radius));
-            const std::size_t y1 = static_cast<std::size_t>(std::min(tilesY, ty + radius + 1));
+            const int tileX0 = std::max(0, tx - radius);
+            const int tileX1 = std::min(tilesX, tx + radius + 1);
+            const std::uint64_t windowColumns = static_cast<std::uint64_t>(std::min(tileX1 * binarize_tile, width) - tileX0 * binarize_tile);
+            const std::size_t x0 = static_cast<std::size_t>(tileX0);
+            const std::size_t x1 = static_cast<std::size_t>(tileX1);
             const std::uint64_t sum = sumTable[y1 * stride + x1] - sumTable[y0 * stride + x1] - sumTable[y1 * stride + x0] + sumTable[y0 * stride + x0];
-            const std::uint64_t count = countTable[y1 * stride + x1] - countTable[y0 * stride + x1] - countTable[y1 * stride + x0] + countTable[y0 * stride + x0];
-            thresholds[static_cast<std::size_t>(ty) * static_cast<std::size_t>(tilesX) + static_cast<std::size_t>(tx)] =
-                static_cast<double>(sum) / static_cast<double>(count);
+            const double mean = static_cast<double>(sum) / static_cast<double>(windowRows * windowColumns);
+            thresholds[static_cast<std::size_t>(ty) * tileColumns + static_cast<std::size_t>(tx)] = static_cast<std::uint8_t>(std::ceil(mean));
         }
     }
 
     BinaryImage binary{width, height, std::vector<std::uint8_t>(pixelCount, 0)};
     for (int y = 0; y < height; ++y)
     {
-        for (int x = 0; x < width; ++x)
+        const std::uint8_t* row = luma + static_cast<std::size_t>(y) * rowBytes;
+        std::uint8_t* darkRow = binary.dark.data() + static_cast<std::size_t>(y) * rowBytes;
+        const std::uint8_t* rowThresholds = thresholds.data() + static_cast<std::size_t>(y / binarize_tile) * tileColumns;
+        for (int tx = 0; tx < tilesX; ++tx)
         {
-            const std::size_t index = static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
-            const std::size_t tile = static_cast<std::size_t>(y / binarize_tile) * static_cast<std::size_t>(tilesX) +
-                                     static_cast<std::size_t>(x / binarize_tile);
-            binary.dark[index] = luma[index] < thresholds[tile] ? 1 : 0;
+            const std::uint8_t threshold = rowThresholds[tx];
+            const int begin = tx * binarize_tile;
+            const int end = std::min(begin + binarize_tile, width);
+            for (int x = begin; x < end; ++x)
+            {
+                darkRow[x] = row[x] < threshold ? 1 : 0;
+            }
         }
     }
     return binary;
@@ -369,7 +397,7 @@ Color SampleCell(const Image& image, const Homography& cellToImage, int cellX, i
     for (const auto& [ox, oy] : offsets)
     {
         const Point2 point = cellToImage.Map(Point2{cellX + 0.5 + ox, cellY + 0.5 + oy});
-        const Color color = SampleBilinear(image, point.x, point.y);
+        const Color color = SampleColor(image, point.x, point.y);
         for (std::size_t c = 0; c < 3; ++c)
         {
             sum[c] += color[c] / static_cast<double>(offsets.size());
@@ -410,7 +438,7 @@ double TimingScore(const Image& image, const std::array<Point2, 4>& centers, int
         const double x = (horizontal ? i : finder_center_cell) + 0.5;
         const double y = (horizontal ? finder_center_cell : i) + 0.5;
         const Point2 point = cellToImage.Map(Point2{x, y});
-        const double luma = Luma(SampleBilinear(image, point.x, point.y));
+        const double luma = Luma(SampleColor(image, point.x, point.y));
         score += i % 2 == 0 ? -luma : luma;
     }
     return score / std::max(1, length - 2 * corner_cells);
