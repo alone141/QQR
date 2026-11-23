@@ -34,6 +34,8 @@ TEST(VideoSourceTest, ReadsRawFramesThenEnds)
     vfdt::Image frame{};
     ASSERT_EQ(source.ReadFrame(frame), vfdt::VideoCode::Ok);
     EXPECT_EQ(frame.width, 4);
+    EXPECT_EQ(frame.format, vfdt::PixelFormat::kRgb24);
+    EXPECT_EQ(frame.pixels.size(), 4U * 3U * 3U);
     EXPECT_EQ(frame.pixels[0], 1);
     ASSERT_EQ(source.ReadFrame(frame), vfdt::VideoCode::Ok);
     EXPECT_EQ(frame.pixels[0], 2);

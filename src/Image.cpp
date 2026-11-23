@@ -76,6 +76,55 @@ std::uint32_t PackRgb(const std::uint8_t* pixel)
     return (static_cast<std::uint32_t>(pixel[0]) << 16) | (static_cast<std::uint32_t>(pixel[1]) << 8) | pixel[2];
 }
 
+// Video-range BT.709: luma 16..235 and chroma 16..240 around 128 map to RGB 0..255.
+constexpr double kLumaOffset = 16.0;
+constexpr double kChromaOffset = 128.0;
+constexpr double kLumaGain = 255.0 / 219.0;
+constexpr double kRedFromV = 1.792741;
+constexpr double kGreenFromU = -0.213249;
+constexpr double kGreenFromV = -0.532909;
+constexpr double kBlueFromU = 2.112402;
+
+// Bilinear mix of four samples of an 8-bit plane: two columns in each of two rows.
+double MixSamples(const std::uint8_t* upperRow, const std::uint8_t* lowerRow, std::size_t left, std::size_t right, double ax, double ay)
+{
+    const double upper = upperRow[left] * (1.0 - ax) + upperRow[right] * ax;
+    const double lower = lowerRow[left] * (1.0 - ax) + lowerRow[right] * ax;
+    return upper * (1.0 - ay) + lower * ay;
+}
+
+std::array<double, 3> SampleYuv420(const Image& image, double x, double y)
+{
+    const double fx = x - 0.5;
+    const double fy = y - 0.5;
+    const int x0 = std::clamp(static_cast<int>(std::floor(fx)), 0, image.width - 1);
+    const int y0 = std::clamp(static_cast<int>(std::floor(fy)), 0, image.height - 1);
+    const int x1 = std::min(x0 + 1, image.width - 1);
+    const int y1 = std::min(y0 + 1, image.height - 1);
+    const double ax = std::clamp(fx - x0, 0.0, 1.0);
+    const double ay = std::clamp(fy - y0, 0.0, 1.0);
+
+    const std::size_t width = static_cast<std::size_t>(image.width);
+    const std::size_t chromaWidth = static_cast<std::size_t>(ChromaSize(image.width));
+    const std::size_t chromaBytes = chromaWidth * static_cast<std::size_t>(ChromaSize(image.height));
+    const std::uint8_t* lumaPlane = image.pixels.data();
+    const std::uint8_t* uPlane = lumaPlane + width * static_cast<std::size_t>(image.height);
+    const std::uint8_t* vPlane = uPlane + chromaBytes;
+    const double luma = MixSamples(lumaPlane + static_cast<std::size_t>(y0) * width, lumaPlane + static_cast<std::size_t>(y1) * width,
+                                   static_cast<std::size_t>(x0), static_cast<std::size_t>(x1), ax, ay);
+
+    // One chroma sample covers a 2x2 block of pixels. Each of the four pixels takes its own block's chroma, which is
+    // what FFmpeg's conversion to RGB does, so a frame samples as it did when FFmpeg delivered RGB.
+    const std::size_t upperChroma = static_cast<std::size_t>(y0 / 2) * chromaWidth;
+    const std::size_t lowerChroma = static_cast<std::size_t>(y1 / 2) * chromaWidth;
+    const std::size_t leftChroma = static_cast<std::size_t>(x0 / 2);
+    const std::size_t rightChroma = static_cast<std::size_t>(x1 / 2);
+    const double u = MixSamples(uPlane + upperChroma, uPlane + lowerChroma, leftChroma, rightChroma, ax, ay) - kChromaOffset;
+    const double v = MixSamples(vPlane + upperChroma, vPlane + lowerChroma, leftChroma, rightChroma, ax, ay) - kChromaOffset;
+    const double gray = (luma - kLumaOffset) * kLumaGain;
+    return {gray + kRedFromV * v, gray + kGreenFromU * u + kGreenFromV * v, gray + kBlueFromU * u};
+}
+
 } // namespace
 
 Image MakeImage(int width, int height)
@@ -84,6 +133,23 @@ Image MakeImage(int width, int height)
     image.width = width;
     image.height = height;
     image.pixels.assign(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 3, 0);
+    return image;
+}
+
+int ChromaSize(int lumaSize)
+{
+    return (lumaSize + 1) / 2;
+}
+
+Image MakeYuv420Image(int width, int height)
+{
+    const std::size_t lumaBytes = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+    const std::size_t chromaBytes = static_cast<std::size_t>(ChromaSize(width)) * static_cast<std::size_t>(ChromaSize(height));
+    Image image{};
+    image.width = width;
+    image.height = height;
+    image.format = PixelFormat::kYuv420;
+    image.pixels.assign(lumaBytes + 2 * chromaBytes, 0);
     return image;
 }
 
@@ -110,6 +176,11 @@ std::array<double, 3> SampleBilinear(const Image& image, double x, double y)
         color[c] = top * (1.0 - ay) + bottom * ay;
     }
     return color;
+}
+
+std::array<double, 3> SampleColor(const Image& image, double x, double y)
+{
+    return image.format == PixelFormat::kYuv420 ? SampleYuv420(image, x, y) : SampleBilinear(image, x, y);
 }
 
 ImageIoCode WritePpm(const std::filesystem::path& path, const Image& image)

@@ -46,7 +46,7 @@ public:
 
     /**
      * @brief Locate the frame in a camera image, sample every cell, and correct the codewords.
-     * @param image Camera image that shows the whole frame.
+     * @param image Camera image that shows the whole frame, in either pixel format.
      * @param out Receives the payload and per-codeword status on success.
      * @return ReadCode::Ok when the frame was sampled, otherwise why it was rejected.
      */

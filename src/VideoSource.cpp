@@ -149,6 +149,7 @@ VideoSource::VideoSource()
     , width{0}
     , height{0}
     , frameRate{0.0}
+    , format{PixelFormat::kRgb24}
 {
 }
 
@@ -166,8 +167,10 @@ VideoCode VideoSource::OpenVideo(const std::filesystem::path& ffmpeg, const std:
         return VideoCode::ProbeFailed;
     }
 
+    // Phone video is stored as YUV 4:2:0, so asking for it back spares FFmpeg a colour conversion that costs more
+    // than the decoding itself and halves what goes through the pipe.
     const CommandString command =
-        Quote(ffmpeg) + Widen(" -v error -nostdin -noautorotate -i ") + Quote(video) + Widen(" -f rawvideo -pix_fmt rgb24 -");
+        Quote(ffmpeg) + Widen(" -v error -nostdin -noautorotate -i ") + Quote(video) + Widen(" -f rawvideo -pix_fmt yuv420p -");
     std::FILE* pipe = OpenPipe(command);
     if (pipe == nullptr)
     {
@@ -177,6 +180,7 @@ VideoCode VideoSource::OpenVideo(const std::filesystem::path& ffmpeg, const std:
     width = probedWidth;
     height = probedHeight;
     frameRate = probedRate;
+    format = PixelFormat::kYuv420;
     return VideoCode::Ok;
 }
 
@@ -194,6 +198,7 @@ VideoCode VideoSource::OpenRaw(const std::filesystem::path& file, int frameWidth
     stream = std::unique_ptr<std::FILE, StreamCloser>{opened, StreamCloser{false}};
     width = frameWidth;
     height = frameHeight;
+    format = PixelFormat::kRgb24;
     return VideoCode::Ok;
 }
 
@@ -203,9 +208,9 @@ VideoCode VideoSource::ReadFrame(Image& out)
     {
         return VideoCode::EndOfStream;
     }
-    if (out.width != width || out.height != height)
+    if (out.width != width || out.height != height || out.format != format)
     {
-        out = MakeImage(width, height);
+        out = format == PixelFormat::kYuv420 ? MakeYuv420Image(width, height) : MakeImage(width, height);
     }
     const std::size_t read = std::fread(out.pixels.data(), 1, out.pixels.size(), stream.get());
     return read == out.pixels.size() ? VideoCode::Ok : VideoCode::EndOfStream;

@@ -26,7 +26,8 @@ public:
     VideoSource();
 
     /**
-     * @brief Open a video file through FFmpeg. Frames come out in stored orientation; rotation tags are ignored.
+     * @brief Open a video file through FFmpeg. Frames come out as planar YUV 4:2:0 in stored orientation; rotation
+     *        tags are ignored.
      * @param ffmpeg The ffmpeg executable, as a path or a bare name looked up on PATH.
      * @param ffprobe The ffprobe executable, as a path or a bare name looked up on PATH.
      * @param video Video file to read.
@@ -45,7 +46,8 @@ public:
 
     /**
      * @brief Read the next frame.
-     * @param out Receives the frame.
+     * @param out Receives the frame: RGB from a raw file, planar YUV 4:2:0 from a video. Its buffer is reused when it
+     *        already has the right size and format.
      * @return VideoCode::Ok on success, VideoCode::EndOfStream when no whole frame is left.
      */
     VideoCode ReadFrame(Image& out);
@@ -79,6 +81,7 @@ private:
     int width;
     int height;
     double frameRate;
+    PixelFormat format;
 };
 
 } // namespace vfdt
