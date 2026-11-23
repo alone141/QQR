@@ -10,6 +10,7 @@
 #include "VideoSource.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <charconv>
 #include <cmath>
@@ -18,6 +19,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <span>
 #include <string>
@@ -208,6 +210,46 @@ void ResolveFfmpeg(const char* argv0, std::filesystem::path directory, std::file
     }
     ffmpeg = directory.empty() ? std::filesystem::path{ffmpeg_name} : directory / ffmpeg_name;
     ffprobe = directory.empty() ? std::filesystem::path{ffprobe_name} : directory / ffprobe_name;
+}
+
+// Hands every frame of @p source to @p accept in batches of @p batchSize, reading the next batch while the previous
+// one is processed. @p betweenBatches runs while nothing is being processed, so it may read what @p accept writes;
+// it returns false to stop early.
+template <typename Accept, typename BetweenBatches>
+void PumpFrames(vfdt::VideoSource& source, std::size_t batchSize, Accept accept, BetweenBatches betweenBatches)
+{
+    std::array<std::vector<vfdt::Image>, 2> batches{std::vector<vfdt::Image>(batchSize), std::vector<vfdt::Image>(batchSize)};
+    std::future<void> processing;
+    std::size_t reading = 0;
+    for (bool ended = false; !ended; reading = 1 - reading)
+    {
+        std::vector<vfdt::Image>& batch = batches[reading];
+        std::size_t filled = 0;
+        while (filled < batch.size() && source.ReadFrame(batch[filled]) == vfdt::VideoCode::Ok)
+        {
+            ++filled;
+        }
+        ended = filled < batch.size();
+        if (processing.valid())
+        {
+            processing.get();
+        }
+        if (!betweenBatches())
+        {
+            return;
+        }
+        if (filled > 0)
+        {
+            processing = std::async(std::launch::async, [&accept, &batch, filled]()
+            {
+                accept(std::span<const vfdt::Image>{batch.data(), filled});
+            });
+        }
+    }
+    if (processing.valid())
+    {
+        processing.get();
+    }
 }
 
 const char* CalibrationProblem(vfdt::CalibrationCode code)
@@ -531,7 +573,6 @@ int RunCalibrateCheck(int argc, char** argv)
     ResolveFfmpeg(argv[0], ffmpegDirectory, ffmpeg, ffprobe);
 
     vfdt::CalibrationAnalyzer analyzer{threads};
-    std::vector<vfdt::Image> batch(static_cast<std::size_t>(threads));
     std::uint64_t images = 0;
     auto lastProgress = std::chrono::steady_clock::now();
     for (const std::filesystem::path& input : inputs)
@@ -551,24 +592,23 @@ int RunCalibrateCheck(int argc, char** argv)
         }
         std::printf("measuring %s (%dx%d) with %d threads\n", input.string().c_str(), source.Width(), source.Height(), threads);
         WarnAboutRecording(source);
-        bool ended = false;
-        while (!ended)
-        {
-            std::size_t filled = 0;
-            while (filled < batch.size() && source.ReadFrame(batch[filled]) == vfdt::VideoCode::Ok)
+        PumpFrames(
+            source, static_cast<std::size_t>(threads),
+            [&analyzer, &images](std::span<const vfdt::Image> batch)
             {
-                ++filled;
-            }
-            ended = filled < batch.size();
-            analyzer.AcceptImages(std::span<const vfdt::Image>{batch.data(), filled});
-            images += filled;
-            const auto now = std::chrono::steady_clock::now();
-            if (now - lastProgress >= std::chrono::seconds{2})
+                analyzer.AcceptImages(batch);
+                images += batch.size();
+            },
+            [&images, &lastProgress]()
             {
-                lastProgress = now;
-                std::printf("  %llu images\n", static_cast<unsigned long long>(images));
-            }
-        }
+                const auto now = std::chrono::steady_clock::now();
+                if (now - lastProgress >= std::chrono::seconds{2})
+                {
+                    lastProgress = now;
+                    std::printf("  %llu images\n", static_cast<unsigned long long>(images));
+                }
+                return true;
+            });
     }
     const vfdt::CalibrationReport report = analyzer.Report();
     PrintCalibrationReport(report);
@@ -963,7 +1003,6 @@ int RunDecode(int argc, char** argv)
     ResolveFfmpeg(argv[0], ffmpegDirectory, ffmpeg, ffprobe);
 
     vfdt::Receiver receiver{bitsPerCell, threads};
-    std::vector<vfdt::Image> batch(static_cast<std::size_t>(threads));
     const auto started = std::chrono::steady_clock::now();
     auto lastProgress = started;
     for (const std::filesystem::path& input : inputs)
@@ -984,27 +1023,25 @@ int RunDecode(int argc, char** argv)
         std::printf("decoding %s (%dx%d) with %d threads\n", input.string().c_str(), source.Width(), source.Height(), threads);
         WarnAboutRecording(source);
 
-        bool ended = false;
-        while (!ended && !receiver.Decoder().IsComplete())
-        {
-            std::size_t filled = 0;
-            while (filled < batch.size() && source.ReadFrame(batch[filled]) == vfdt::VideoCode::Ok)
+        PumpFrames(
+            source, static_cast<std::size_t>(threads),
+            [&receiver](std::span<const vfdt::Image> batch)
             {
-                ++filled;
-            }
-            ended = filled < batch.size();
-            receiver.AcceptImages(std::span<const vfdt::Image>{batch.data(), filled});
-
-            const auto now = std::chrono::steady_clock::now();
-            if (now - lastProgress >= std::chrono::seconds{2})
+                receiver.AcceptImages(batch);
+            },
+            [&receiver, &lastProgress]()
             {
-                lastProgress = now;
-                const vfdt::ReceiverStats& stats = receiver.Stats();
-                std::printf("  %llu images, %llu read, blocks %u/%u\n", static_cast<unsigned long long>(stats.images),
-                            static_cast<unsigned long long>(stats.framesRead), receiver.Decoder().CompletedBlocks(),
-                            receiver.Decoder().BlockCount());
-            }
-        }
+                const auto now = std::chrono::steady_clock::now();
+                if (now - lastProgress >= std::chrono::seconds{2})
+                {
+                    lastProgress = now;
+                    const vfdt::ReceiverStats& stats = receiver.Stats();
+                    std::printf("  %llu images, %llu read, blocks %u/%u\n", static_cast<unsigned long long>(stats.images),
+                                static_cast<unsigned long long>(stats.framesRead), receiver.Decoder().CompletedBlocks(),
+                                receiver.Decoder().BlockCount());
+                }
+                return !receiver.Decoder().IsComplete();
+            });
         if (receiver.Decoder().IsComplete())
         {
             break;
