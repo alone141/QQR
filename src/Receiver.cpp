@@ -9,7 +9,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 Receiver::Receiver(int bitsPerCell, int threads)
@@ -136,4 +136,4 @@ ReceiveCode Receiver::Unpack(UnpackedContent& out) const
     return ReceiveCode::BadManifest;
 }
 
-} // namespace vfdt
+} // namespace qqr

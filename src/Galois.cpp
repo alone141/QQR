@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <span>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -121,4 +121,4 @@ void GfScale(std::span<std::uint8_t> target, std::uint8_t factor)
     }
 }
 
-} // namespace vfdt
+} // namespace qqr

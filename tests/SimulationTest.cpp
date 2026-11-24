@@ -21,9 +21,9 @@ std::vector<std::uint8_t> MakeFile(std::size_t size, std::uint32_t seed)
     return file;
 }
 
-vfdt::SimulationConfig MakeSmallConfig()
+qqr::SimulationConfig MakeSmallConfig()
 {
-    vfdt::SimulationConfig config{};
+    qqr::SimulationConfig config{};
     config.screenWidth = 640;
     config.screenHeight = 360;
     config.cellPixels = 4;
@@ -39,9 +39,9 @@ vfdt::SimulationConfig MakeSmallConfig()
 TEST(SimulationTest, SmallTextFileArrivesIntact)
 {
     const std::vector<std::uint8_t> file(2048, 'a');
-    vfdt::SimulationReport report{};
-    ASSERT_EQ(vfdt::RunSimulation("note.txt", file, MakeSmallConfig(), report, {}), vfdt::SimulationCode::Ok);
-    ASSERT_EQ(report.result, vfdt::ReceiveCode::Ok);
+    qqr::SimulationReport report{};
+    ASSERT_EQ(qqr::RunSimulation("note.txt", file, MakeSmallConfig(), report, {}), qqr::SimulationCode::Ok);
+    ASSERT_EQ(report.result, qqr::ReceiveCode::Ok);
     EXPECT_EQ(report.fileName, "note.txt");
     EXPECT_EQ(report.recoveredFile, file);
 }
@@ -49,18 +49,18 @@ TEST(SimulationTest, SmallTextFileArrivesIntact)
 TEST(SimulationTest, MultiBlockFileSurvivesDroppedFrames)
 {
     const std::vector<std::uint8_t> file = MakeFile(150000, 9);
-    vfdt::SimulationConfig config = MakeSmallConfig();
+    qqr::SimulationConfig config = MakeSmallConfig();
     config.dropRate = 0.4;
-    vfdt::SimulationReport report{};
-    ASSERT_EQ(vfdt::RunSimulation("archive.tar.gz", file, config, report, {}), vfdt::SimulationCode::Ok);
-    ASSERT_EQ(report.result, vfdt::ReceiveCode::Ok);
+    qqr::SimulationReport report{};
+    ASSERT_EQ(qqr::RunSimulation("archive.tar.gz", file, config, report, {}), qqr::SimulationCode::Ok);
+    ASSERT_EQ(report.result, qqr::ReceiveCode::Ok);
     EXPECT_EQ(report.recoveredFile, file);
 }
 
 TEST(SimulationTest, TooSmallScreenIsBadLayout)
 {
-    vfdt::SimulationConfig config = MakeSmallConfig();
+    qqr::SimulationConfig config = MakeSmallConfig();
     config.screenWidth = 200;
-    vfdt::SimulationReport report{};
-    EXPECT_EQ(vfdt::RunSimulation("x", std::vector<std::uint8_t>{1}, config, report, {}), vfdt::SimulationCode::BadLayout);
+    qqr::SimulationReport report{};
+    EXPECT_EQ(qqr::RunSimulation("x", std::vector<std::uint8_t>{1}, config, report, {}), qqr::SimulationCode::BadLayout);
 }

@@ -27,7 +27,7 @@ std::vector<std::uint8_t> MakeContent(std::size_t size, std::uint32_t seed)
     return content;
 }
 
-bool ContentMatches(const vfdt::FountainDecoder& decoder, const std::vector<std::uint8_t>& content)
+bool ContentMatches(const qqr::FountainDecoder& decoder, const std::vector<std::uint8_t>& content)
 {
     const std::span<const std::uint8_t> recovered = decoder.Content();
     return std::equal(recovered.begin(), recovered.end(), content.begin(), content.end());
@@ -38,8 +38,8 @@ bool ContentMatches(const vfdt::FountainDecoder& decoder, const std::vector<std:
 TEST(FountainDecoderTest, SourceSymbolsAloneRecoverContent)
 {
     const std::vector<std::uint8_t> content = MakeContent(5000, 1);
-    const vfdt::FountainEncoder encoder{content, symbol_size, session_id};
-    vfdt::FountainDecoder decoder{};
+    const qqr::FountainEncoder encoder{content, symbol_size, session_id};
+    qqr::FountainDecoder decoder{};
     for (std::uint32_t esi = 0; esi < encoder.Layout().BlockSymbols(0); ++esi)
     {
         decoder.AddPacket(encoder.MakePacket(0, esi));
@@ -51,9 +51,9 @@ TEST(FountainDecoderTest, SourceSymbolsAloneRecoverContent)
 TEST(FountainDecoderTest, RepairSymbolsFillLostSources)
 {
     const std::vector<std::uint8_t> content = MakeContent(20000, 2);
-    const vfdt::FountainEncoder encoder{content, symbol_size, session_id};
+    const qqr::FountainEncoder encoder{content, symbol_size, session_id};
     const std::uint32_t blockSymbols = encoder.Layout().BlockSymbols(0);
-    vfdt::FountainDecoder decoder{};
+    qqr::FountainDecoder decoder{};
     std::mt19937 random{3};
     for (std::uint32_t esi = 0; esi < 2 * blockSymbols && !decoder.IsComplete(); ++esi)
     {
@@ -70,9 +70,9 @@ TEST(FountainDecoderTest, RepairSymbolsFillLostSources)
 TEST(FountainDecoderTest, RepairSymbolsAloneRecoverContent)
 {
     const std::vector<std::uint8_t> content = MakeContent(3000, 4);
-    const vfdt::FountainEncoder encoder{content, symbol_size, session_id};
+    const qqr::FountainEncoder encoder{content, symbol_size, session_id};
     const std::uint32_t blockSymbols = encoder.Layout().BlockSymbols(0);
-    vfdt::FountainDecoder decoder{};
+    qqr::FountainDecoder decoder{};
     std::uint32_t used = 0;
     for (std::uint32_t esi = blockSymbols; esi < 3 * blockSymbols && !decoder.IsComplete(); ++esi)
     {
@@ -87,7 +87,7 @@ TEST(FountainDecoderTest, RepairSymbolsAloneRecoverContent)
 TEST(FountainDecoderTest, SmallBlockRecoversFromAnyKSymbols)
 {
     const std::vector<std::uint8_t> content = MakeContent(10 * symbol_size, 8);
-    const vfdt::FountainEncoder encoder{content, symbol_size, session_id};
+    const qqr::FountainEncoder encoder{content, symbol_size, session_id};
     const std::uint32_t blockSymbols = encoder.Layout().BlockSymbols(0);
     ASSERT_EQ(blockSymbols, 10U);
     std::mt19937 random{9};
@@ -100,7 +100,7 @@ TEST(FountainDecoderTest, SmallBlockRecoversFromAnyKSymbols)
             ids[i] = i;
         }
         std::shuffle(ids.begin(), ids.end(), random);
-        vfdt::FountainDecoder decoder{};
+        qqr::FountainDecoder decoder{};
         for (std::uint32_t i = 0; i < blockSymbols; ++i)
         {
             decoder.AddPacket(encoder.MakePacket(0, ids[i]));
@@ -112,11 +112,11 @@ TEST(FountainDecoderTest, SmallBlockRecoversFromAnyKSymbols)
 
 TEST(FountainDecoderTest, MultipleBlocksCompleteIndependently)
 {
-    const std::size_t size = static_cast<std::size_t>(vfdt::max_block_symbols) * symbol_size * 2 + 100;
+    const std::size_t size = static_cast<std::size_t>(qqr::max_block_symbols) * symbol_size * 2 + 100;
     const std::vector<std::uint8_t> content = MakeContent(size, 5);
-    const vfdt::FountainEncoder encoder{content, symbol_size, session_id};
+    const qqr::FountainEncoder encoder{content, symbol_size, session_id};
     ASSERT_EQ(encoder.Layout().BlockCount(), 3U);
-    vfdt::FountainDecoder decoder{};
+    qqr::FountainDecoder decoder{};
     for (const std::uint32_t block : {2U, 0U})
     {
         for (std::uint32_t esi = 0; esi < encoder.Layout().BlockSymbols(block); ++esi)
@@ -132,18 +132,18 @@ TEST(FountainDecoderTest, MultipleBlocksCompleteIndependently)
 TEST(FountainDecoderTest, DuplicatePacketIsReported)
 {
     const std::vector<std::uint8_t> content = MakeContent(1000, 6);
-    const vfdt::FountainEncoder encoder{content, symbol_size, session_id};
-    vfdt::FountainDecoder decoder{};
-    EXPECT_EQ(decoder.AddPacket(encoder.MakePacket(0, 0)), vfdt::AddCode::Ok);
-    EXPECT_EQ(decoder.AddPacket(encoder.MakePacket(0, 0)), vfdt::AddCode::Duplicate);
+    const qqr::FountainEncoder encoder{content, symbol_size, session_id};
+    qqr::FountainDecoder decoder{};
+    EXPECT_EQ(decoder.AddPacket(encoder.MakePacket(0, 0)), qqr::AddCode::Ok);
+    EXPECT_EQ(decoder.AddPacket(encoder.MakePacket(0, 0)), qqr::AddCode::Duplicate);
 }
 
 TEST(FountainDecoderTest, OtherSessionIsRejected)
 {
     const std::vector<std::uint8_t> content = MakeContent(1000, 7);
-    const vfdt::FountainEncoder first{content, symbol_size, session_id};
-    const vfdt::FountainEncoder second{content, symbol_size, session_id + 1};
-    vfdt::FountainDecoder decoder{};
-    EXPECT_EQ(decoder.AddPacket(first.MakePacket(0, 0)), vfdt::AddCode::Ok);
-    EXPECT_EQ(decoder.AddPacket(second.MakePacket(0, 1)), vfdt::AddCode::SessionMismatch);
+    const qqr::FountainEncoder first{content, symbol_size, session_id};
+    const qqr::FountainEncoder second{content, symbol_size, session_id + 1};
+    qqr::FountainDecoder decoder{};
+    EXPECT_EQ(decoder.AddPacket(first.MakePacket(0, 0)), qqr::AddCode::Ok);
+    EXPECT_EQ(decoder.AddPacket(second.MakePacket(0, 1)), qqr::AddCode::SessionMismatch);
 }

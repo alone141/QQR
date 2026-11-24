@@ -7,7 +7,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 constexpr std::uint32_t window_blocks = 8;
@@ -58,4 +58,4 @@ private:
     std::vector<std::uint32_t> windowRounds;
 };
 
-} // namespace vfdt
+} // namespace qqr

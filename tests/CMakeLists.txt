@@ -1,5 +1,5 @@
 include(GoogleTest)
-add_executable(vfdt_tests
+add_executable(qqr_tests
     CalibrationTest.cpp
     CameraSimulatorTest.cpp
     ChecksumTest.cpp
@@ -20,10 +20,10 @@ add_executable(vfdt_tests
     TransmitterTest.cpp
     VideoSourceTest.cpp
 )
-target_link_libraries(vfdt_tests PRIVATE vfdt_core GTest::gtest_main)
-gtest_discover_tests(vfdt_tests DISCOVERY_TIMEOUT 60)
+target_link_libraries(qqr_tests PRIVATE qqr_core GTest::gtest_main)
+gtest_discover_tests(qqr_tests DISCOVERY_TIMEOUT 60)
 
 # The decode command itself, which the unit tests do not reach.
 add_test(NAME DecodeCommand.RecoversSimulatedRecording
-    COMMAND ${CMAKE_COMMAND} -DVFDT=$<TARGET_FILE:vfdt> -DINPUT=${PROJECT_SOURCE_DIR}/testcase/small.txt
+    COMMAND ${CMAKE_COMMAND} -DQQR=$<TARGET_FILE:qqr> -DINPUT=${PROJECT_SOURCE_DIR}/testcase/small.txt
             -DWORK=${CMAKE_CURRENT_BINARY_DIR}/decode_command -P ${CMAKE_CURRENT_SOURCE_DIR}/DecodeCommandTest.cmake)

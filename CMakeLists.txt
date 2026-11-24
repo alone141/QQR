@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(vfdt LANGUAGES CXX)
+project(qqr LANGUAGES CXX)
 
 # Airgapped build: every dependency is vendored under third_party.
 #   googletest 1.18.0 (third_party/googletest), tests only

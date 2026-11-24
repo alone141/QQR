@@ -10,7 +10,7 @@
 #include <string_view>
 #include <system_error>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -231,4 +231,4 @@ double VideoSource::FrameRate() const
     return frameRate;
 }
 
-} // namespace vfdt
+} // namespace qqr

@@ -7,7 +7,7 @@
 #include <functional>
 #include <span>
 
-namespace vfdt
+namespace qqr
 {
 
 struct PlayerConfig
@@ -83,4 +83,4 @@ PlayCode PlayFrames(const FrameSource& source, const PlayerConfig& config, Playe
  */
 PlayCode PlayContent(std::span<const std::uint8_t> content, const PlayerConfig& config, PlayerStatus& status, const PlayerProgress& progress);
 
-} // namespace vfdt
+} // namespace qqr

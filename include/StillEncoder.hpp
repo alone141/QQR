@@ -6,7 +6,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 constexpr double still_repair_ratio = 0.25;
@@ -36,4 +36,4 @@ std::uint64_t StillCapacity(const FrameLayout& layout);
 StillCode BuildStillPayload(std::span<const std::uint8_t> content, std::uint32_t sessionId, const FrameLayout& layout,
                             std::vector<std::uint8_t>& payload);
 
-} // namespace vfdt
+} // namespace qqr

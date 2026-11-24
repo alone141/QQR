@@ -14,7 +14,7 @@
 #include <string_view>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -271,4 +271,4 @@ ImageIoCode WritePng(const std::filesystem::path& path, const Image& image)
     return out ? ImageIoCode::Ok : ImageIoCode::WriteFailed;
 }
 
-} // namespace vfdt
+} // namespace qqr

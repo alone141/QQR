@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 enum class ReadCode
@@ -59,4 +59,4 @@ private:
     mutable FrameLayout cachedLayout;
 };
 
-} // namespace vfdt
+} // namespace qqr

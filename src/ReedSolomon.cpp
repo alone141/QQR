@@ -7,7 +7,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -271,4 +271,4 @@ RsCode ReedSolomon::Decode(std::span<std::uint8_t> codeword, int& correctedBytes
     return RsCode::Ok;
 }
 
-} // namespace vfdt
+} // namespace qqr

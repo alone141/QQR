@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -670,4 +670,4 @@ ReadCode FrameReader::ReadFrame(const Image& image, FrameRead& out) const
     return ReadCode::Ok;
 }
 
-} // namespace vfdt
+} // namespace qqr

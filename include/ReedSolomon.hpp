@@ -4,7 +4,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 constexpr int rs_max_codeword_bytes = 255;
@@ -52,4 +52,4 @@ private:
     std::vector<std::uint8_t> generator;
 };
 
-} // namespace vfdt
+} // namespace qqr

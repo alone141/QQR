@@ -10,7 +10,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -83,4 +83,4 @@ StillCode BuildStillPayload(std::span<const std::uint8_t> content, std::uint32_t
     return StillCode::Ok;
 }
 
-} // namespace vfdt
+} // namespace qqr

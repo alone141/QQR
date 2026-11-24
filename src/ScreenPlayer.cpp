@@ -23,7 +23,7 @@
 #include <dwmapi.h>
 #endif
 
-namespace vfdt
+namespace qqr
 {
 
 #ifdef _WIN32
@@ -32,7 +32,7 @@ namespace
 {
 
 constexpr std::size_t frames_ahead = 6;
-constexpr wchar_t window_class_name[] = L"VfdtPlayer";
+constexpr wchar_t window_class_name[] = L"QqrPlayer";
 
 struct ReadyFrame
 {
@@ -290,7 +290,7 @@ PlayCode PlayFrames(const FrameSource& source, const PlayerConfig& config, Playe
         left = CW_USEDEFAULT;
         top = CW_USEDEFAULT;
     }
-    HWND window = CreateWindowExW(extendedStyle, window_class_name, L"vfdt player (Space: start/pause, Esc: quit)", style, left, top,
+    HWND window = CreateWindowExW(extendedStyle, window_class_name, L"qqr player (Space: start/pause, Esc: quit)", style, left, top,
                                   windowRect.right - windowRect.left, windowRect.bottom - windowRect.top, nullptr, nullptr, instance, nullptr);
     if (window == nullptr)
     {
@@ -433,4 +433,4 @@ PlayCode PlayContent(std::span<const std::uint8_t>, const PlayerConfig&, PlayerS
 
 #endif
 
-} // namespace vfdt
+} // namespace qqr

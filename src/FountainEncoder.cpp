@@ -7,7 +7,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 FountainEncoder::FountainEncoder(std::span<const std::uint8_t> content, std::uint32_t symbolSize, std::uint32_t sessionId)
@@ -55,4 +55,4 @@ void FountainEncoder::AddSourceSymbol(std::uint32_t blockIndex, std::uint32_t sy
     GfMulAdd(out.first(available), source, factor);
 }
 
-} // namespace vfdt
+} // namespace qqr

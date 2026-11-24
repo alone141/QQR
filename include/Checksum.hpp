@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <span>
 
-namespace vfdt
+namespace qqr
 {
 
 constexpr std::size_t sha256_digest_bytes = 32;
@@ -55,4 +55,4 @@ private:
  */
 Sha256Digest ComputeSha256(std::span<const std::uint8_t> data);
 
-} // namespace vfdt
+} // namespace qqr

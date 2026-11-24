@@ -6,7 +6,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 FrameRenderer::FrameRenderer(const FrameLayout& layout, int cellPixels)
@@ -101,4 +101,4 @@ std::vector<std::uint8_t> FrameRenderer::EncodeFrameBytes(std::span<const std::u
     return frameBytes;
 }
 
-} // namespace vfdt
+} // namespace qqr

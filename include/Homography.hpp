@@ -3,7 +3,7 @@
 #include <array>
 #include <span>
 
-namespace vfdt
+namespace qqr
 {
 
 struct Point2
@@ -52,4 +52,4 @@ private:
  */
 HomographyCode FitHomography(std::span<const Point2, 4> from, std::span<const Point2, 4> to, Homography& out);
 
-} // namespace vfdt
+} // namespace qqr

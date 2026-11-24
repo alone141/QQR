@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 SimulationCode RunSimulation(std::string_view fileName, std::span<const std::uint8_t> fileBytes, const SimulationConfig& config,
@@ -127,4 +127,4 @@ SimulationCode RunSimulation(std::string_view fileName, std::span<const std::uin
     return SimulationCode::Ok;
 }
 
-} // namespace vfdt
+} // namespace qqr

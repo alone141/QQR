@@ -12,7 +12,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 constexpr std::size_t max_calibration_steps = 32;
@@ -238,4 +238,4 @@ private:
 void SimulateCalibration(const CalibrationRenderer& renderer, const CameraModel& camera, double cameraFps, std::uint64_t ticks,
                          CalibrationAnalyzer& analyzer);
 
-} // namespace vfdt
+} // namespace qqr

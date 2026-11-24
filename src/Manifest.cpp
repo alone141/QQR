@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -90,4 +90,4 @@ std::uint32_t SessionIdFor(std::span<const std::uint8_t> content)
     return Crc32(content.first(std::min(content.size(), fixed_manifest_bytes + max_file_name_bytes)));
 }
 
-} // namespace vfdt
+} // namespace qqr

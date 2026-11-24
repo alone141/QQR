@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <span>
 
-namespace vfdt
+namespace qqr
 {
 
 /**
@@ -51,4 +51,4 @@ void GfMulAdd(std::span<std::uint8_t> target, std::span<const std::uint8_t> sour
  */
 void GfScale(std::span<std::uint8_t> target, std::uint8_t factor);
 
-} // namespace vfdt
+} // namespace qqr

@@ -7,7 +7,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -84,4 +84,4 @@ PacketCode ParsePacket(std::span<const std::uint8_t> bytes, Packet& out)
     return PacketCode::Ok;
 }
 
-} // namespace vfdt
+} // namespace qqr

@@ -5,7 +5,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 constexpr int finder_module_cells = 3;
@@ -175,4 +175,4 @@ private:
  */
 int GridCells(int screenPixels, int cellPixels);
 
-} // namespace vfdt
+} // namespace qqr

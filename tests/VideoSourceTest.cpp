@@ -13,7 +13,7 @@ namespace
 
 std::filesystem::path WriteRawFrames(int width, int height, int frames)
 {
-    const std::filesystem::path path = std::filesystem::temp_directory_path() / "vfdt_video_source_test.rgb";
+    const std::filesystem::path path = std::filesystem::temp_directory_path() / "qqr_video_source_test.rgb";
     std::ofstream file{path, std::ios::binary};
     for (int f = 0; f < frames; ++f)
     {
@@ -29,35 +29,35 @@ std::filesystem::path WriteRawFrames(int width, int height, int frames)
 TEST(VideoSourceTest, ReadsRawFramesThenEnds)
 {
     const std::filesystem::path path = WriteRawFrames(4, 3, 2);
-    vfdt::VideoSource source{};
-    ASSERT_EQ(source.OpenRaw(path, 4, 3), vfdt::VideoCode::Ok);
-    vfdt::Image frame{};
-    ASSERT_EQ(source.ReadFrame(frame), vfdt::VideoCode::Ok);
+    qqr::VideoSource source{};
+    ASSERT_EQ(source.OpenRaw(path, 4, 3), qqr::VideoCode::Ok);
+    qqr::Image frame{};
+    ASSERT_EQ(source.ReadFrame(frame), qqr::VideoCode::Ok);
     EXPECT_EQ(frame.width, 4);
-    EXPECT_EQ(frame.format, vfdt::PixelFormat::kRgb24);
+    EXPECT_EQ(frame.format, qqr::PixelFormat::kRgb24);
     EXPECT_EQ(frame.pixels.size(), 4U * 3U * 3U);
     EXPECT_EQ(frame.pixels[0], 1);
-    ASSERT_EQ(source.ReadFrame(frame), vfdt::VideoCode::Ok);
+    ASSERT_EQ(source.ReadFrame(frame), qqr::VideoCode::Ok);
     EXPECT_EQ(frame.pixels[0], 2);
-    EXPECT_EQ(source.ReadFrame(frame), vfdt::VideoCode::EndOfStream);
+    EXPECT_EQ(source.ReadFrame(frame), qqr::VideoCode::EndOfStream);
 }
 
 TEST(VideoSourceTest, RawFramesHaveNoFrameRate)
 {
     const std::filesystem::path path = WriteRawFrames(4, 3, 1);
-    vfdt::VideoSource source{};
-    ASSERT_EQ(source.OpenRaw(path, 4, 3), vfdt::VideoCode::Ok);
+    qqr::VideoSource source{};
+    ASSERT_EQ(source.OpenRaw(path, 4, 3), qqr::VideoCode::Ok);
     EXPECT_EQ(source.FrameRate(), 0.0);
 }
 
 TEST(VideoSourceTest, MissingFileFailsToOpen)
 {
-    vfdt::VideoSource source{};
-    EXPECT_EQ(source.OpenRaw(std::filesystem::temp_directory_path() / "vfdt_no_such_file.rgb", 4, 3), vfdt::VideoCode::OpenFailed);
+    qqr::VideoSource source{};
+    EXPECT_EQ(source.OpenRaw(std::filesystem::temp_directory_path() / "qqr_no_such_file.rgb", 4, 3), qqr::VideoCode::OpenFailed);
 }
 
 TEST(VideoSourceTest, MissingToolFailsProbe)
 {
-    vfdt::VideoSource source{};
-    EXPECT_EQ(source.OpenVideo("vfdt_no_such_ffmpeg", "vfdt_no_such_ffprobe", "video.mp4"), vfdt::VideoCode::ProbeFailed);
+    qqr::VideoSource source{};
+    EXPECT_EQ(source.OpenVideo("qqr_no_such_ffmpeg", "qqr_no_such_ffprobe", "video.mp4"), qqr::VideoCode::ProbeFailed);
 }

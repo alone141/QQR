@@ -8,7 +8,7 @@
 #include <random>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -237,4 +237,4 @@ Image CameraSimulator::Capture(const Image& current, const Image& next, double s
     return image;
 }
 
-} // namespace vfdt
+} // namespace qqr

@@ -10,7 +10,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 constexpr std::uint64_t max_content_bytes = 64ULL * 1024 * 1024 * 1024;
@@ -93,4 +93,4 @@ private:
     std::uint32_t completedBlocks;
 };
 
-} // namespace vfdt
+} // namespace qqr

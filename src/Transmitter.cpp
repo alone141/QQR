@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 Transmitter::Transmitter(std::span<const std::uint8_t> content, std::uint32_t sessionId, const FrameLayout& layout, double repairRatio)
@@ -71,4 +71,4 @@ Transmitter::Slot Transmitter::SlotAt(std::uint64_t packetIndex) const
     return slot;
 }
 
-} // namespace vfdt
+} // namespace qqr

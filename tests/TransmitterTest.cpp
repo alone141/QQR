@@ -14,10 +14,10 @@
 namespace
 {
 
-vfdt::FrameLayout MakeLayout()
+qqr::FrameLayout MakeLayout()
 {
-    vfdt::FrameLayout layout{};
-    EXPECT_EQ(layout.Configure(120, 80, 2), vfdt::LayoutCode::Ok);
+    qqr::FrameLayout layout{};
+    EXPECT_EQ(layout.Configure(120, 80, 2), qqr::LayoutCode::Ok);
     return layout;
 }
 
@@ -31,14 +31,14 @@ std::vector<std::uint8_t> MakeContent(std::size_t size)
     return content;
 }
 
-void FeedFrame(const vfdt::FrameLayout& layout, const std::vector<std::uint8_t>& payload, vfdt::FountainDecoder& decoder)
+void FeedFrame(const qqr::FrameLayout& layout, const std::vector<std::uint8_t>& payload, qqr::FountainDecoder& decoder)
 {
     for (int slot = 0; slot < layout.PacketsPerFrame(); ++slot)
     {
-        vfdt::Packet packet{};
+        qqr::Packet packet{};
         const std::span<const std::uint8_t> bytes = std::span<const std::uint8_t>{payload}.subspan(
             static_cast<std::size_t>(slot) * layout.PacketBytes(), layout.PacketBytes());
-        ASSERT_EQ(vfdt::ParsePacket(bytes, packet), vfdt::PacketCode::Ok);
+        ASSERT_EQ(qqr::ParsePacket(bytes, packet), qqr::PacketCode::Ok);
         decoder.AddPacket(packet);
     }
 }
@@ -47,10 +47,10 @@ void FeedFrame(const vfdt::FrameLayout& layout, const std::vector<std::uint8_t>&
 
 TEST(TransmitterTest, OnePassDeliversEverything)
 {
-    const vfdt::FrameLayout layout = MakeLayout();
+    const qqr::FrameLayout layout = MakeLayout();
     const std::vector<std::uint8_t> content = MakeContent(300000);
-    const vfdt::Transmitter transmitter{content, 42, layout, 0.25};
-    vfdt::FountainDecoder decoder{};
+    const qqr::Transmitter transmitter{content, 42, layout, 0.25};
+    qqr::FountainDecoder decoder{};
     for (std::uint64_t frame = 0; frame < transmitter.FramesPerPass(); ++frame)
     {
         FeedFrame(layout, transmitter.FramePayload(frame), decoder);
@@ -61,10 +61,10 @@ TEST(TransmitterTest, OnePassDeliversEverything)
 
 TEST(TransmitterTest, SecondPassAloneDeliversEverything)
 {
-    const vfdt::FrameLayout layout = MakeLayout();
+    const qqr::FrameLayout layout = MakeLayout();
     const std::vector<std::uint8_t> content = MakeContent(50000);
-    const vfdt::Transmitter transmitter{content, 42, layout, 0.25};
-    vfdt::FountainDecoder decoder{};
+    const qqr::Transmitter transmitter{content, 42, layout, 0.25};
+    qqr::FountainDecoder decoder{};
     const std::uint64_t pass = transmitter.FramesPerPass();
     for (std::uint64_t frame = pass; frame < 3 * pass && !decoder.IsComplete(); ++frame)
     {
@@ -75,8 +75,8 @@ TEST(TransmitterTest, SecondPassAloneDeliversEverything)
 
 TEST(TransmitterTest, PayloadHasLayoutSize)
 {
-    const vfdt::FrameLayout layout = MakeLayout();
+    const qqr::FrameLayout layout = MakeLayout();
     const std::vector<std::uint8_t> content = MakeContent(1000);
-    const vfdt::Transmitter transmitter{content, 42, layout, 0.25};
+    const qqr::Transmitter transmitter{content, 42, layout, 0.25};
     EXPECT_EQ(transmitter.FramePayload(0).size(), layout.PayloadBytes());
 }

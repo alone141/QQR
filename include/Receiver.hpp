@@ -9,7 +9,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 struct ReceiverStats
@@ -87,4 +87,4 @@ private:
     ReceiverStats stats;
 };
 
-} // namespace vfdt
+} // namespace qqr

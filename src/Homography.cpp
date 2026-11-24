@@ -6,7 +6,7 @@
 #include <span>
 #include <utility>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -84,4 +84,4 @@ HomographyCode FitHomography(std::span<const Point2, 4> from, std::span<const Po
     return HomographyCode::Ok;
 }
 
-} // namespace vfdt
+} // namespace qqr

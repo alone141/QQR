@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -614,4 +614,4 @@ void SimulateCalibration(const CalibrationRenderer& renderer, const CameraModel&
     analyzer.AcceptImages(batch);
 }
 
-} // namespace vfdt
+} // namespace qqr

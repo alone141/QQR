@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -240,4 +240,4 @@ bool FountainDecoder::TrySolve(std::uint32_t blockIndex)
     return true;
 }
 
-} // namespace vfdt
+} // namespace qqr

@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 constexpr std::size_t max_file_name_bytes = 1024;
@@ -59,4 +59,4 @@ ManifestCode UnpackContent(std::span<const std::uint8_t> content, UnpackedConten
  */
 std::uint32_t SessionIdFor(std::span<const std::uint8_t> content);
 
-} // namespace vfdt
+} // namespace qqr

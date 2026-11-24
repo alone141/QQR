@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <memory>
 
-namespace vfdt
+namespace qqr
 {
 
 enum class VideoCode
@@ -84,4 +84,4 @@ private:
     PixelFormat format;
 };
 
-} // namespace vfdt
+} // namespace qqr

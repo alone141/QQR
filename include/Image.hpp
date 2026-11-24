@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 enum class PixelFormat
@@ -91,4 +91,4 @@ ImageIoCode WritePpm(const std::filesystem::path& path, const Image& image);
  */
 ImageIoCode WritePng(const std::filesystem::path& path, const Image& image);
 
-} // namespace vfdt
+} // namespace qqr

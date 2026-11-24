@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -93,4 +93,4 @@ std::vector<std::uint8_t> RepairCoefficients(std::uint32_t sessionId, std::uint3
     return coefficients;
 }
 
-} // namespace vfdt
+} // namespace qqr

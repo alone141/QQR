@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 class FrameRenderer
@@ -37,4 +37,4 @@ private:
     ReedSolomon codec;
 };
 
-} // namespace vfdt
+} // namespace qqr

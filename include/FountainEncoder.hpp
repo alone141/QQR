@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <span>
 
-namespace vfdt
+namespace qqr
 {
 
 class FountainEncoder
@@ -42,4 +42,4 @@ private:
     std::uint32_t sessionId;
 };
 
-} // namespace vfdt
+} // namespace qqr

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 constexpr std::uint32_t max_block_symbols = 1024;
@@ -77,4 +77,4 @@ private:
  */
 std::vector<std::uint8_t> RepairCoefficients(std::uint32_t sessionId, std::uint32_t blockIndex, std::uint32_t esi, std::uint32_t blockSymbols);
 
-} // namespace vfdt
+} // namespace qqr

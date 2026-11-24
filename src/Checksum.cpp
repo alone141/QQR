@@ -8,7 +8,7 @@
 #include <cstring>
 #include <span>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -171,4 +171,4 @@ Sha256Digest ComputeSha256(std::span<const std::uint8_t> data)
     return hasher.Finish();
 }
 
-} // namespace vfdt
+} // namespace qqr

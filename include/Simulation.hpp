@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 struct SimulationConfig
@@ -72,4 +72,4 @@ using SimulationProgress = std::function<void(const SimulationReport&)>;
 SimulationCode RunSimulation(std::string_view fileName, std::span<const std::uint8_t> fileBytes, const SimulationConfig& config,
                              SimulationReport& report, const SimulationProgress& progress);
 
-} // namespace vfdt
+} // namespace qqr

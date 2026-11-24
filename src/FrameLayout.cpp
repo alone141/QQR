@@ -9,7 +9,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 namespace
@@ -203,4 +203,4 @@ int GridCells(int screenPixels, int cellPixels)
     return std::max(0, screenPixels / cellPixels - 2 * quiet_zone_cells) & ~1;
 }
 
-} // namespace vfdt
+} // namespace qqr

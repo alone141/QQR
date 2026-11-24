@@ -79,7 +79,7 @@ constexpr int recommended_video_side = 3840;
 constexpr double recommended_video_fps = 50.0;
 
 // Phones fall back to 1080p 30 fps easily; say so, since small cells then stop reading.
-void WarnAboutRecording(const vfdt::VideoSource& source)
+void WarnAboutRecording(const qqr::VideoSource& source)
 {
     if (source.FrameRate() <= 0.0)
     {
@@ -100,13 +100,13 @@ void PrintUsage()
 {
     std::puts(
         "usage:\n"
-        "  vfdt play <file> [options]           show <file> as frames on the screen\n"
-        "  vfdt image <file> [options]          encode a small <file> into one PNG to photograph\n"
-        "  vfdt decode <input>... [options]     recover the file from phone videos or photos\n"
-        "  vfdt simulate <file> [options]       send <file> through a simulated camera\n"
-        "  vfdt calibrate show [options]        cycle test frames of several cell sizes, colours and rates\n"
-        "  vfdt calibrate check <video>... [o]  measure a recording of them and pick the fastest reliable one\n"
-        "  vfdt calibrate simulate [options]    run the calibration through a simulated camera\n"
+        "  qqr play <file> [options]           show <file> as frames on the screen\n"
+        "  qqr image <file> [options]          encode a small <file> into one PNG to photograph\n"
+        "  qqr decode <input>... [options]     recover the file from phone videos or photos\n"
+        "  qqr simulate <file> [options]       send <file> through a simulated camera\n"
+        "  qqr calibrate show [options]        cycle test frames of several cell sizes, colours and rates\n"
+        "  qqr calibrate check <video>... [o]  measure a recording of them and pick the fastest reliable one\n"
+        "  qqr calibrate simulate [options]    run the calibration through a simulated camera\n"
         "\n"
         "play options:\n"
         "  --cell <px>          cell size in screen pixels (6)\n"
@@ -122,14 +122,14 @@ void PrintUsage()
         "  --colors <2|4>       colours per cell (4); decode must use the same\n"
         "\n"
         "decode options:\n"
-        "  --out <dir>          write the recovered file here (vfdt-out)\n"
+        "  --out <dir>          write the recovered file here (qqr-out)\n"
         "  --colors <2|4>       colours per cell (4)\n"
-        "  --ffmpeg <dir>       folder holding ffmpeg and ffprobe (next to vfdt, else PATH)\n"
+        "  --ffmpeg <dir>       folder holding ffmpeg and ffprobe (next to qqr, else PATH)\n"
         "  --threads <n>        frames read in parallel (all cores)\n"
         "  --raw <WxH>          inputs are raw RGB24 frames of this size, not videos\n"
         "\n"
         "simulate options:\n"
-        "  --out <dir>          write the recovered file here (vfdt-out)\n"
+        "  --out <dir>          write the recovered file here (qqr-out)\n"
         "  --screen <WxH>       display resolution (1920x1080)\n"
         "  --cell <px>          cell size in screen pixels (6)\n"
         "  --colors <2|4>       colours per cell (4)\n"
@@ -216,16 +216,16 @@ void ResolveFfmpeg(const char* argv0, std::filesystem::path directory, std::file
 // one is processed. @p betweenBatches runs while nothing is being processed, so it may read what @p accept writes;
 // it returns false to stop early.
 template <typename Accept, typename BetweenBatches>
-void PumpFrames(vfdt::VideoSource& source, std::size_t batchSize, Accept accept, BetweenBatches betweenBatches)
+void PumpFrames(qqr::VideoSource& source, std::size_t batchSize, Accept accept, BetweenBatches betweenBatches)
 {
-    std::array<std::vector<vfdt::Image>, 2> batches{std::vector<vfdt::Image>(batchSize), std::vector<vfdt::Image>(batchSize)};
+    std::array<std::vector<qqr::Image>, 2> batches{std::vector<qqr::Image>(batchSize), std::vector<qqr::Image>(batchSize)};
     std::future<void> processing;
     std::size_t reading = 0;
     for (bool ended = false; !ended; reading = 1 - reading)
     {
-        std::vector<vfdt::Image>& batch = batches[reading];
+        std::vector<qqr::Image>& batch = batches[reading];
         std::size_t filled = 0;
-        while (filled < batch.size() && source.ReadFrame(batch[filled]) == vfdt::VideoCode::Ok)
+        while (filled < batch.size() && source.ReadFrame(batch[filled]) == qqr::VideoCode::Ok)
         {
             ++filled;
         }
@@ -242,7 +242,7 @@ void PumpFrames(vfdt::VideoSource& source, std::size_t batchSize, Accept accept,
         {
             processing = std::async(std::launch::async, [&accept, &batch, filled]()
             {
-                accept(std::span<const vfdt::Image>{batch.data(), filled});
+                accept(std::span<const qqr::Image>{batch.data(), filled});
             });
         }
     }
@@ -252,30 +252,30 @@ void PumpFrames(vfdt::VideoSource& source, std::size_t batchSize, Accept accept,
     }
 }
 
-const char* CalibrationProblem(vfdt::CalibrationCode code)
+const char* CalibrationProblem(qqr::CalibrationCode code)
 {
     switch (code)
     {
-    case vfdt::CalibrationCode::Ok:
+    case qqr::CalibrationCode::Ok:
         return "ok";
-    case vfdt::CalibrationCode::BadStepCount:
+    case qqr::CalibrationCode::BadStepCount:
         return "--cells, --colors and --fps give too many combinations; keep their product at 32 or fewer";
-    case vfdt::CalibrationCode::BadCellSize:
+    case qqr::CalibrationCode::BadCellSize:
         return "a cell size is too large for the screen (the grid needs at least 64 cells each way)";
-    case vfdt::CalibrationCode::BadTiming:
+    case qqr::CalibrationCode::BadTiming:
         return "--seconds and --fps must show every combination for at least one frame, and each frame for at most 255 refreshes";
-    case vfdt::CalibrationCode::BadBitsPerCell:
+    case qqr::CalibrationCode::BadBitsPerCell:
         return "--colors takes 2 and/or 4";
     }
     return "unknown problem";
 }
 
-void PrintCalibrationReport(const vfdt::CalibrationReport& report)
+void PrintCalibrationReport(const qqr::CalibrationReport& report)
 {
     if (!report.found)
     {
         std::printf("no calibration frame was read in %llu images.\n", static_cast<unsigned long long>(report.captures));
-        std::printf("check that the whole screen is in view and in focus and that the video shows vfdt calibrate show.\n"
+        std::printf("check that the whole screen is in view and in focus and that the video shows qqr calibrate show.\n"
                     "If it still fails, try --cells 16,14,12 to find a size that reads at all.\n");
         return;
     }
@@ -284,7 +284,7 @@ void PrintCalibrationReport(const vfdt::CalibrationReport& report)
     std::printf(" cell col   fps  grid       bytes/frame  images  read  blend  lost   yield  errors/cw avg max  est. MB/min\n");
     for (std::size_t s = 0; s < report.steps.size(); ++s)
     {
-        const vfdt::CalibrationStep& step = report.steps[s];
+        const qqr::CalibrationStep& step = report.steps[s];
         // A blank line between runs of cell sizes keeps each colour count and frame rate together.
         if (s > 0 && (step.bitsPerCell != report.steps[s - 1].bitsPerCell || step.framesPerSecond != report.steps[s - 1].framesPerSecond))
         {
@@ -317,26 +317,26 @@ void PrintCalibrationReport(const vfdt::CalibrationReport& report)
     std::printf("\nyield: share of the data shown that was read at least once. errors/cw: bytes Reed-Solomon fixed per\n"
                 "codeword (it can fix %d), in the best capture of each frame. A combination is ok at %.0f%% yield,\n"
                 "average errors at most %.0f and worst at most %d.\n\n",
-                vfdt::rs_parity_bytes / 2, 100.0 * vfdt::calibration_target_yield, vfdt::calibration_mean_error_limit,
-                vfdt::calibration_worst_error_limit);
+                qqr::rs_parity_bytes / 2, 100.0 * qqr::calibration_target_yield, qqr::calibration_mean_error_limit,
+                qqr::calibration_worst_error_limit);
     if (report.recommendedStep < 0)
     {
         std::printf("nothing was reliable. Hold the phone steadier (a tripod helps), fill more of the frame with the\n"
                     "screen, check focus, dim the room lights, or try larger cells or a lower --fps.\n");
         return;
     }
-    const vfdt::CalibrationStep& best = report.steps[static_cast<std::size_t>(report.recommendedStep)];
+    const qqr::CalibrationStep& best = report.steps[static_cast<std::size_t>(report.recommendedStep)];
     std::printf("recommended: --cell %d --colors %d --fps %g (about %.1f MB/min)\n", best.cellPixels, 1 << best.bitsPerCell,
                 best.framesPerSecond, MegabytesPerMinute(best.bytesPerSecond));
-    std::printf("  vfdt play <file> --cell %d --colors %d --fps %g\n", best.cellPixels, 1 << best.bitsPerCell, best.framesPerSecond);
+    std::printf("  qqr play <file> --cell %d --colors %d --fps %g\n", best.cellPixels, 1 << best.bitsPerCell, best.framesPerSecond);
     std::printf("for large transfers leave some margin: a larger cell or a lower rate is safer if lighting or distance may change.\n");
 }
 
 struct CalibrationOptions
 {
-    vfdt::CalibrationPlan plan{};
-    vfdt::PlayerConfig player{};
-    vfdt::SimulationConfig simulation{};
+    qqr::CalibrationPlan plan{};
+    qqr::PlayerConfig player{};
+    qqr::SimulationConfig simulation{};
 };
 
 // Shared parser for calibrate show and calibrate simulate; simulate also takes the camera options.
@@ -365,7 +365,7 @@ bool ParseCalibrationOption(std::string_view option, std::string_view value, boo
     }
     if (simulate)
     {
-        vfdt::SimulationConfig& config = options.simulation;
+        qqr::SimulationConfig& config = options.simulation;
         if (option == "--refresh")
         {
             return ParsePositiveDouble(value, options.plan.refreshRate);
@@ -442,14 +442,14 @@ int RunCalibrateShow(int argc, char** argv)
     {
         return parsed;
     }
-    vfdt::ScreenInfo screen{};
-    const vfdt::PlayCode queried = vfdt::QueryScreen(options.player, screen);
-    if (queried == vfdt::PlayCode::Unsupported)
+    qqr::ScreenInfo screen{};
+    const qqr::PlayCode queried = qqr::QueryScreen(options.player, screen);
+    if (queried == qqr::PlayCode::Unsupported)
     {
         std::fprintf(stderr, "the player is only available on Windows\n");
         return exit_failed;
     }
-    if (queried != vfdt::PlayCode::Ok)
+    if (queried != qqr::PlayCode::Ok)
     {
         std::fprintf(stderr, "cannot find the primary display\n");
         return exit_failed;
@@ -459,15 +459,15 @@ int RunCalibrateShow(int argc, char** argv)
     options.plan.refreshRate = screen.refreshRate;
     options.plan.screenWidth = screen.width;
     options.plan.screenHeight = screen.height;
-    vfdt::CalibrationRenderer renderer{};
-    const vfdt::CalibrationCode configured = renderer.Configure(options.plan);
-    if (configured != vfdt::CalibrationCode::Ok)
+    qqr::CalibrationRenderer renderer{};
+    const qqr::CalibrationCode configured = renderer.Configure(options.plan);
+    if (configured != qqr::CalibrationCode::Ok)
     {
         std::fprintf(stderr, "%s\n", CalibrationProblem(configured));
         return exit_usage;
     }
     options.player.displayFps = renderer.TickRate();
-    const std::vector<vfdt::CalibrationSetting>& settings = renderer.Settings();
+    const std::vector<qqr::CalibrationSetting>& settings = renderer.Settings();
     const double cycleSeconds = static_cast<double>(renderer.TicksPerCycle()) / renderer.TickRate();
     std::printf("screen %dx%d at %d Hz; %zu combinations of cell size, colours and frame rate:\n", screen.width, screen.height,
                 screen.refreshRate, settings.size());
@@ -482,14 +482,14 @@ int RunCalibrateShow(int argc, char** argv)
         std::printf(" %d", settings[s].cellPixels);
     }
     std::printf("\none cycle = %.0f s. Place the phone where it will be for real transfers, start recording in 4K at 60 fps,\n"
-                "press Space, record one full cycle plus a few seconds, then: vfdt calibrate check <video>\n"
+                "press Space, record one full cycle plus a few seconds, then: qqr calibrate check <video>\n"
                 "Space pauses, Esc quits.\n",
                 cycleSeconds);
 
     // Held frames repeat for several ticks; render each one once.
     std::uint64_t cachedStart = 0;
-    vfdt::Image cachedFrame{};
-    const vfdt::FrameSource source = [&renderer, &cachedStart, &cachedFrame](std::uint64_t tick)
+    qqr::Image cachedFrame{};
+    const qqr::FrameSource source = [&renderer, &cachedStart, &cachedFrame](std::uint64_t tick)
     {
         const std::uint64_t start = renderer.FrameStartAt(tick);
         if (cachedFrame.width == 0 || start != cachedStart)
@@ -499,17 +499,17 @@ int RunCalibrateShow(int argc, char** argv)
         }
         return cachedFrame;
     };
-    vfdt::PlayerStatus status{};
-    const vfdt::PlayerProgress progress = [&renderer](const vfdt::PlayerStatus& current)
+    qqr::PlayerStatus status{};
+    const qqr::PlayerProgress progress = [&renderer](const qqr::PlayerStatus& current)
     {
         const std::uint64_t shown = current.framesShown > 0 ? current.framesShown - 1 : 0;
         const std::uint64_t cycle = shown / std::max<std::uint64_t>(1, renderer.TicksPerCycle());
-        const vfdt::CalibrationSetting& setting = renderer.Settings()[renderer.StepAt(shown)];
+        const qqr::CalibrationSetting& setting = renderer.Settings()[renderer.StepAt(shown)];
         std::printf("\r  %s  cell %2d px  %d colours  %4.1f frames/s  cycle %llu      ", current.paused ? "paused " : "playing",
                     setting.cellPixels, 1 << setting.bitsPerCell, renderer.TickRate() / setting.hold, static_cast<unsigned long long>(cycle + 1));
         std::fflush(stdout);
     };
-    if (vfdt::PlayFrames(source, options.player, status, progress) != vfdt::PlayCode::Ok)
+    if (qqr::PlayFrames(source, options.player, status, progress) != qqr::PlayCode::Ok)
     {
         std::fprintf(stderr, "\ncannot open a window on the primary display\n");
         return exit_failed;
@@ -572,20 +572,20 @@ int RunCalibrateCheck(int argc, char** argv)
     std::filesystem::path ffprobe{};
     ResolveFfmpeg(argv[0], ffmpegDirectory, ffmpeg, ffprobe);
 
-    vfdt::CalibrationAnalyzer analyzer{threads};
+    qqr::CalibrationAnalyzer analyzer{threads};
     std::uint64_t images = 0;
     auto lastProgress = std::chrono::steady_clock::now();
     for (const std::filesystem::path& input : inputs)
     {
-        vfdt::VideoSource source{};
-        const vfdt::VideoCode opened = rawWidth > 0 ? source.OpenRaw(input, rawWidth, rawHeight) : source.OpenVideo(ffmpeg, ffprobe, input);
-        if (opened == vfdt::VideoCode::ProbeFailed)
+        qqr::VideoSource source{};
+        const qqr::VideoCode opened = rawWidth > 0 ? source.OpenRaw(input, rawWidth, rawHeight) : source.OpenVideo(ffmpeg, ffprobe, input);
+        if (opened == qqr::VideoCode::ProbeFailed)
         {
             std::fprintf(stderr, "cannot read %s with %s: is FFmpeg installed (use --ffmpeg <dir>) and is it a video?\n",
                          input.string().c_str(), ffprobe.string().c_str());
             return exit_failed;
         }
-        if (opened != vfdt::VideoCode::Ok)
+        if (opened != qqr::VideoCode::Ok)
         {
             std::fprintf(stderr, "cannot open %s\n", input.string().c_str());
             return exit_failed;
@@ -594,7 +594,7 @@ int RunCalibrateCheck(int argc, char** argv)
         WarnAboutRecording(source);
         PumpFrames(
             source, static_cast<std::size_t>(threads),
-            [&analyzer, &images](std::span<const vfdt::Image> batch)
+            [&analyzer, &images](std::span<const qqr::Image> batch)
             {
                 analyzer.AcceptImages(batch);
                 images += batch.size();
@@ -610,7 +610,7 @@ int RunCalibrateCheck(int argc, char** argv)
                 return true;
             });
     }
-    const vfdt::CalibrationReport report = analyzer.Report();
+    const qqr::CalibrationReport report = analyzer.Report();
     PrintCalibrationReport(report);
     return report.recommendedStep >= 0 ? exit_ok : exit_failed;
 }
@@ -624,21 +624,21 @@ int RunCalibrateSimulate(int argc, char** argv)
     {
         return parsed;
     }
-    vfdt::CalibrationRenderer renderer{};
-    const vfdt::CalibrationCode configured = renderer.Configure(options.plan);
-    if (configured != vfdt::CalibrationCode::Ok)
+    qqr::CalibrationRenderer renderer{};
+    const qqr::CalibrationCode configured = renderer.Configure(options.plan);
+    if (configured != qqr::CalibrationCode::Ok)
     {
         std::fprintf(stderr, "%s\n", CalibrationProblem(configured));
         return exit_usage;
     }
-    const vfdt::CameraModel& camera = options.simulation.camera;
+    const qqr::CameraModel& camera = options.simulation.camera;
     std::printf("simulating screen %dx%d, camera %dx%d at %.0f fps, blur %.1f, noise %.1f\n", options.plan.screenWidth,
                 options.plan.screenHeight, camera.width, camera.height, options.simulation.cameraFps, camera.blurSigma, camera.noiseSigma);
-    vfdt::CalibrationAnalyzer analyzer{static_cast<int>(std::max(1U, std::thread::hardware_concurrency()))};
+    qqr::CalibrationAnalyzer analyzer{static_cast<int>(std::max(1U, std::thread::hardware_concurrency()))};
     // Run into the next cycle, as a real recording should, so an unreadable last step sits between readable frames.
     const std::uint64_t ticks = renderer.TicksPerCycle() + renderer.TicksPerCycle() / renderer.Settings().size();
-    vfdt::SimulateCalibration(renderer, camera, options.simulation.cameraFps, ticks, analyzer);
-    const vfdt::CalibrationReport report = analyzer.Report();
+    qqr::SimulateCalibration(renderer, camera, options.simulation.cameraFps, ticks, analyzer);
+    const qqr::CalibrationReport report = analyzer.Report();
     PrintCalibrationReport(report);
     return report.recommendedStep >= 0 ? exit_ok : exit_failed;
 }
@@ -690,25 +690,25 @@ bool WriteRecoveredFile(const std::filesystem::path& outDirectory, const std::st
     return static_cast<bool>(out);
 }
 
-const char* ResultName(vfdt::ReceiveCode code)
+const char* ResultName(qqr::ReceiveCode code)
 {
     switch (code)
     {
-    case vfdt::ReceiveCode::Ok:
+    case qqr::ReceiveCode::Ok:
         return "ok";
-    case vfdt::ReceiveCode::Incomplete:
+    case qqr::ReceiveCode::Incomplete:
         return "incomplete";
-    case vfdt::ReceiveCode::BadManifest:
+    case qqr::ReceiveCode::BadManifest:
         return "bad manifest";
-    case vfdt::ReceiveCode::SizeMismatch:
+    case qqr::ReceiveCode::SizeMismatch:
         return "size mismatch";
-    case vfdt::ReceiveCode::HashMismatch:
+    case qqr::ReceiveCode::HashMismatch:
         return "SHA-256 mismatch";
     }
     return "unknown";
 }
 
-void PrintReceiverStats(const vfdt::ReceiverStats& stats)
+void PrintReceiverStats(const qqr::ReceiverStats& stats)
 {
     std::printf("images %llu: read %llu, blended %llu, torn %llu, no finders %llu, bad grid %llu, low contrast %llu\n",
                 static_cast<unsigned long long>(stats.images), static_cast<unsigned long long>(stats.framesRead),
@@ -721,7 +721,7 @@ void PrintReceiverStats(const vfdt::ReceiverStats& stats)
                 static_cast<unsigned long long>(stats.packetsRedundant), static_cast<unsigned long long>(stats.packetsDamaged));
 }
 
-void PrintSimulationProgress(const vfdt::SimulationReport& report)
+void PrintSimulationProgress(const qqr::SimulationReport& report)
 {
     std::printf("  t=%6.1fs  frame %llu/%llu  blocks %u/%u  read %llu/%llu captures\n", report.seconds,
                 static_cast<unsigned long long>(report.contentFrames), static_cast<unsigned long long>(report.framesPerPass),
@@ -737,7 +737,7 @@ int RunPlay(int argc, char** argv)
         return exit_usage;
     }
     const std::filesystem::path input{argv[2]};
-    vfdt::PlayerConfig config{};
+    qqr::PlayerConfig config{};
     for (int i = 3; i < argc; i += 2)
     {
         const std::string_view option{argv[i]};
@@ -786,11 +786,11 @@ int RunPlay(int argc, char** argv)
         std::fprintf(stderr, "cannot read %s\n", input.string().c_str());
         return exit_failed;
     }
-    const std::vector<std::uint8_t> content = vfdt::PackContent(input.filename().string(), fileBytes);
+    const std::vector<std::uint8_t> content = qqr::PackContent(input.filename().string(), fileBytes);
     std::printf("playing %s (%zu bytes)\n", input.filename().string().c_str(), fileBytes.size());
 
     bool printedHeader = false;
-    const vfdt::PlayerProgress progress = [&printedHeader](const vfdt::PlayerStatus& status)
+    const qqr::PlayerProgress progress = [&printedHeader](const qqr::PlayerStatus& status)
     {
         if (!printedHeader)
         {
@@ -808,19 +808,19 @@ int RunPlay(int argc, char** argv)
         std::fflush(stdout);
     };
 
-    vfdt::PlayerStatus status{};
-    switch (vfdt::PlayContent(content, config, status, progress))
+    qqr::PlayerStatus status{};
+    switch (qqr::PlayContent(content, config, status, progress))
     {
-    case vfdt::PlayCode::Ok:
+    case qqr::PlayCode::Ok:
         std::printf("\nshowed %llu frames\n", static_cast<unsigned long long>(status.framesShown));
         return exit_ok;
-    case vfdt::PlayCode::BadLayout:
+    case qqr::PlayCode::BadLayout:
         std::fprintf(stderr, "the screen is too small for %d px cells\n", config.cellPixels);
         return exit_usage;
-    case vfdt::PlayCode::NoDisplay:
+    case qqr::PlayCode::NoDisplay:
         std::fprintf(stderr, "cannot open a window on the primary display\n");
         return exit_failed;
-    case vfdt::PlayCode::Unsupported:
+    case qqr::PlayCode::Unsupported:
         std::fprintf(stderr, "the player is only available on Windows\n");
         return exit_failed;
     }
@@ -890,20 +890,20 @@ int RunImage(int argc, char** argv)
         std::fprintf(stderr, "cannot read %s\n", input.string().c_str());
         return exit_failed;
     }
-    const std::vector<std::uint8_t> content = vfdt::PackContent(input.filename().string(), fileBytes);
+    const std::vector<std::uint8_t> content = qqr::PackContent(input.filename().string(), fileBytes);
     const std::size_t manifestBytes = content.size() - fileBytes.size();
 
-    vfdt::FrameLayout layout{};
+    qqr::FrameLayout layout{};
     std::uint64_t capacity = 0;
     bool fits = false;
     std::pair<int, int> chosen{};
     for (const std::pair<int, int>& size : sizes)
     {
-        if (layout.Configure(vfdt::GridCells(size.first, cellPixels), vfdt::GridCells(size.second, cellPixels), bitsPerCell) != vfdt::LayoutCode::Ok)
+        if (layout.Configure(qqr::GridCells(size.first, cellPixels), qqr::GridCells(size.second, cellPixels), bitsPerCell) != qqr::LayoutCode::Ok)
         {
             continue;
         }
-        capacity = vfdt::StillCapacity(layout);
+        capacity = qqr::StillCapacity(layout);
         chosen = size;
         if (capacity >= content.size())
         {
@@ -917,14 +917,14 @@ int RunImage(int argc, char** argv)
         std::fprintf(stderr, "%s is %zu bytes; one %dx%d image with %d px cells holds at most %llu bytes of it.\n",
                      input.filename().string().c_str(), fileBytes.size(), chosen.first, chosen.second, cellPixels,
                      static_cast<unsigned long long>(fileCapacity));
-        std::fprintf(stderr, "use smaller cells (--cell), a larger --size, or vfdt play for video.\n");
+        std::fprintf(stderr, "use smaller cells (--cell), a larger --size, or qqr play for video.\n");
         return exit_failed;
     }
 
     std::vector<std::uint8_t> payload;
-    vfdt::BuildStillPayload(content, vfdt::SessionIdFor(content), layout, payload);
-    const vfdt::Image image = vfdt::FrameRenderer{layout, cellPixels}.Render(payload, 0);
-    if (vfdt::WritePng(output, image) != vfdt::ImageIoCode::Ok)
+    qqr::BuildStillPayload(content, qqr::SessionIdFor(content), layout, payload);
+    const qqr::Image image = qqr::FrameRenderer{layout, cellPixels}.Render(payload, 0);
+    if (qqr::WritePng(output, image) != qqr::ImageIoCode::Ok)
     {
         std::fprintf(stderr, "cannot write %s\n", output.string().c_str());
         return exit_failed;
@@ -933,14 +933,14 @@ int RunImage(int argc, char** argv)
                 image.height, chosen.first, chosen.second, layout.GridWidth(), layout.GridHeight(), layout.ColorCount());
     std::printf("%zu of %llu bytes used; %d packets, the rest is repair data\n", content.size(), static_cast<unsigned long long>(capacity),
                 layout.PacketsPerFrame());
-    std::printf("show it at 100%% zoom (one image pixel per screen pixel) or print it, photograph it, then: vfdt decode <photo>\n");
+    std::printf("show it at 100%% zoom (one image pixel per screen pixel) or print it, photograph it, then: qqr decode <photo>\n");
     return exit_ok;
 }
 
 int RunDecode(int argc, char** argv)
 {
     std::vector<std::filesystem::path> inputs;
-    std::filesystem::path outDirectory{"vfdt-out"};
+    std::filesystem::path outDirectory{"qqr-out"};
     std::filesystem::path ffmpegDirectory{};
     int bitsPerCell = 2;
     int threads = static_cast<int>(std::max(1U, std::thread::hardware_concurrency()));
@@ -1002,20 +1002,20 @@ int RunDecode(int argc, char** argv)
     std::filesystem::path ffprobe{};
     ResolveFfmpeg(argv[0], ffmpegDirectory, ffmpeg, ffprobe);
 
-    vfdt::Receiver receiver{bitsPerCell, threads};
+    qqr::Receiver receiver{bitsPerCell, threads};
     const auto started = std::chrono::steady_clock::now();
     auto lastProgress = started;
     for (const std::filesystem::path& input : inputs)
     {
-        vfdt::VideoSource source{};
-        const vfdt::VideoCode opened = rawWidth > 0 ? source.OpenRaw(input, rawWidth, rawHeight) : source.OpenVideo(ffmpeg, ffprobe, input);
-        if (opened == vfdt::VideoCode::ProbeFailed)
+        qqr::VideoSource source{};
+        const qqr::VideoCode opened = rawWidth > 0 ? source.OpenRaw(input, rawWidth, rawHeight) : source.OpenVideo(ffmpeg, ffprobe, input);
+        if (opened == qqr::VideoCode::ProbeFailed)
         {
             std::fprintf(stderr, "cannot read %s with %s: is FFmpeg installed (use --ffmpeg <dir>) and is it a video?\n",
                          input.string().c_str(), ffprobe.string().c_str());
             return exit_failed;
         }
-        if (opened != vfdt::VideoCode::Ok)
+        if (opened != qqr::VideoCode::Ok)
         {
             std::fprintf(stderr, "cannot open %s\n", input.string().c_str());
             return exit_failed;
@@ -1025,7 +1025,7 @@ int RunDecode(int argc, char** argv)
 
         PumpFrames(
             source, static_cast<std::size_t>(threads),
-            [&receiver](std::span<const vfdt::Image> batch)
+            [&receiver](std::span<const qqr::Image> batch)
             {
                 receiver.AcceptImages(batch);
             },
@@ -1035,7 +1035,7 @@ int RunDecode(int argc, char** argv)
                 if (now - lastProgress >= std::chrono::seconds{2})
                 {
                     lastProgress = now;
-                    const vfdt::ReceiverStats& stats = receiver.Stats();
+                    const qqr::ReceiverStats& stats = receiver.Stats();
                     std::printf("  %llu images, %llu read, blocks %u/%u\n", static_cast<unsigned long long>(stats.images),
                                 static_cast<unsigned long long>(stats.framesRead), receiver.Decoder().CompletedBlocks(),
                                 receiver.Decoder().BlockCount());
@@ -1049,15 +1049,15 @@ int RunDecode(int argc, char** argv)
     }
 
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-    const vfdt::ReceiverStats& stats = receiver.Stats();
+    const qqr::ReceiverStats& stats = receiver.Stats();
     std::printf("processed in %.1f s (%.1f images/s)\n", seconds, seconds > 0.0 ? static_cast<double>(stats.images) / seconds : 0.0);
     PrintReceiverStats(stats);
     std::printf("blocks %u/%u\n", receiver.Decoder().CompletedBlocks(), receiver.Decoder().BlockCount());
 
-    vfdt::UnpackedContent unpacked{};
-    const vfdt::ReceiveCode result = receiver.Unpack(unpacked);
+    qqr::UnpackedContent unpacked{};
+    const qqr::ReceiveCode result = receiver.Unpack(unpacked);
     std::printf("result: %s\n", ResultName(result));
-    if (result == vfdt::ReceiveCode::Incomplete)
+    if (result == qqr::ReceiveCode::Incomplete)
     {
         if (!receiver.Decoder().HasSession())
         {
@@ -1073,7 +1073,7 @@ int RunDecode(int argc, char** argv)
         std::printf("%s\nrecord a longer pass and decode it together with these recordings\n", missing.size() > max_missing_listed ? " ..." : "");
         return exit_failed;
     }
-    if (result != vfdt::ReceiveCode::Ok)
+    if (result != qqr::ReceiveCode::Ok)
     {
         return exit_failed;
     }
@@ -1096,8 +1096,8 @@ int RunSimulate(int argc, char** argv)
         return exit_usage;
     }
     const std::filesystem::path input{argv[2]};
-    std::filesystem::path outDirectory{"vfdt-out"};
-    vfdt::SimulationConfig config{};
+    std::filesystem::path outDirectory{"qqr-out"};
+    qqr::SimulationConfig config{};
     for (int i = 3; i < argc; ++i)
     {
         const std::string_view option{argv[i]};
@@ -1208,8 +1208,8 @@ int RunSimulate(int argc, char** argv)
     }
 
     std::printf("sending %s (%zu bytes)\n", input.filename().string().c_str(), fileBytes.size());
-    vfdt::SimulationReport report{};
-    if (vfdt::RunSimulation(input.filename().string(), fileBytes, config, report, PrintSimulationProgress) != vfdt::SimulationCode::Ok)
+    qqr::SimulationReport report{};
+    if (qqr::RunSimulation(input.filename().string(), fileBytes, config, report, PrintSimulationProgress) != qqr::SimulationCode::Ok)
     {
         std::fprintf(stderr, "screen %dx%d with %d px cells gives no usable grid\n", config.screenWidth, config.screenHeight, config.cellPixels);
         return exit_usage;
@@ -1231,7 +1231,7 @@ int RunSimulate(int argc, char** argv)
                     config.camera.height, config.recordPath.string().c_str());
     }
     std::printf("result: %s\n", ResultName(report.result));
-    if (report.result != vfdt::ReceiveCode::Ok)
+    if (report.result != qqr::ReceiveCode::Ok)
     {
         return exit_failed;
     }

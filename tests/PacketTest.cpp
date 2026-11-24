@@ -8,9 +8,9 @@
 namespace
 {
 
-vfdt::Packet MakePacket()
+qqr::Packet MakePacket()
 {
-    vfdt::Packet packet{};
+    qqr::Packet packet{};
     packet.sessionId = 0xA1B2C3D4U;
     packet.contentSize = 123456789ULL;
     packet.blockIndex = 17;
@@ -23,11 +23,11 @@ vfdt::Packet MakePacket()
 
 TEST(PacketTest, RoundTripKeepsEveryField)
 {
-    const vfdt::Packet packet = MakePacket();
-    const std::vector<std::uint8_t> bytes = vfdt::SerializePacket(packet);
-    ASSERT_EQ(bytes.size(), packet.symbol.size() + vfdt::packet_overhead_bytes);
-    vfdt::Packet parsed{};
-    ASSERT_EQ(vfdt::ParsePacket(bytes, parsed), vfdt::PacketCode::Ok);
+    const qqr::Packet packet = MakePacket();
+    const std::vector<std::uint8_t> bytes = qqr::SerializePacket(packet);
+    ASSERT_EQ(bytes.size(), packet.symbol.size() + qqr::packet_overhead_bytes);
+    qqr::Packet parsed{};
+    ASSERT_EQ(qqr::ParsePacket(bytes, parsed), qqr::PacketCode::Ok);
     EXPECT_EQ(parsed.sessionId, packet.sessionId);
     EXPECT_EQ(parsed.contentSize, packet.contentSize);
     EXPECT_EQ(parsed.blockIndex, packet.blockIndex);
@@ -37,22 +37,22 @@ TEST(PacketTest, RoundTripKeepsEveryField)
 
 TEST(PacketTest, FlippedBitFailsChecksum)
 {
-    std::vector<std::uint8_t> bytes = vfdt::SerializePacket(MakePacket());
+    std::vector<std::uint8_t> bytes = qqr::SerializePacket(MakePacket());
     bytes[30] ^= 0x10;
-    vfdt::Packet parsed{};
-    EXPECT_EQ(vfdt::ParsePacket(bytes, parsed), vfdt::PacketCode::BadChecksum);
+    qqr::Packet parsed{};
+    EXPECT_EQ(qqr::ParsePacket(bytes, parsed), qqr::PacketCode::BadChecksum);
 }
 
 TEST(PacketTest, TruncatedPacketFails)
 {
-    const std::vector<std::uint8_t> bytes = vfdt::SerializePacket(MakePacket());
-    vfdt::Packet parsed{};
-    EXPECT_NE(vfdt::ParsePacket(std::span<const std::uint8_t>{bytes}.first(bytes.size() - 1), parsed), vfdt::PacketCode::Ok);
+    const std::vector<std::uint8_t> bytes = qqr::SerializePacket(MakePacket());
+    qqr::Packet parsed{};
+    EXPECT_NE(qqr::ParsePacket(std::span<const std::uint8_t>{bytes}.first(bytes.size() - 1), parsed), qqr::PacketCode::Ok);
 }
 
 TEST(PacketTest, TooShortIsWrongSize)
 {
-    const std::vector<std::uint8_t> bytes(vfdt::packet_overhead_bytes, 0);
-    vfdt::Packet parsed{};
-    EXPECT_EQ(vfdt::ParsePacket(bytes, parsed), vfdt::PacketCode::WrongSize);
+    const std::vector<std::uint8_t> bytes(qqr::packet_overhead_bytes, 0);
+    qqr::Packet parsed{};
+    EXPECT_EQ(qqr::ParsePacket(bytes, parsed), qqr::PacketCode::WrongSize);
 }

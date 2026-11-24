@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <random>
 
-namespace vfdt
+namespace qqr
 {
 
 struct CameraModel
@@ -54,4 +54,4 @@ private:
     std::mt19937 random;
 };
 
-} // namespace vfdt
+} // namespace qqr

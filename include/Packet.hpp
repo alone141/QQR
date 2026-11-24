@@ -5,7 +5,7 @@
 #include <span>
 #include <vector>
 
-namespace vfdt
+namespace qqr
 {
 
 constexpr std::uint16_t packet_magic = 0x4656;
@@ -46,4 +46,4 @@ std::vector<std::uint8_t> SerializePacket(const Packet& packet);
  */
 PacketCode ParsePacket(std::span<const std::uint8_t> bytes, Packet& out);
 
-} // namespace vfdt
+} // namespace qqr
