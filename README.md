@@ -7,11 +7,18 @@ receiving PC decodes the video back into the original file and checks its SHA-25
 It handles anything from a few kilobytes (one photo of one frame is enough) to files of 1–2 GB (a video of a few
 minutes to an hour, depending on the camera). One Windows executable, `vfdt.exe`, does both ends.
 
+![A phone's view of the screen during a transfer](docs/phone-capture.jpg)
+
+*One frame of a real 4K phone recording of the player. The squares in the corners are the finder patterns.*
+
 ## How it works
 
+![Close-up of a frame corner with the finder pattern, palette, timing and parity strips, and data cells labelled](docs/frame-anatomy.png)
+
 - **Frames:** each frame is a grid of cells in 4 colours (2 bits per cell) or 2 colours (1 bit), framed by finder
-  patterns so the reader can find and unwarp the grid in a camera image. Parity strips mark consecutive frames, so
-  images caught mid-switch are recognised and skipped.
+  patterns so the reader can find and unwarp the grid in a camera image. Alternating timing tracks pin down the grid
+  size, and the palette strip shows each colour as the camera sees it. Parity strips turn black and white on
+  alternate frames, so images caught mid-switch are recognised and skipped.
 - **Inside a frame:** data is protected by Reed-Solomon RS(255,191) codewords, interleaved across the whole frame,
   so a smudge or a glare spot costs a few bytes in many codewords instead of whole codewords.
 - **Across frames:** the file is cut into packets of a fountain code. The player loops forever with fresh repair
@@ -65,7 +72,12 @@ combinations: `--cells 6,5,4,3 --colors 4,2 --fps 30,20,15`.
 vfdt play <file> --cell 5 --colors 4 --fps 30
 ```
 
-It prints the length of one pass. Start recording, press Space, record one pass plus about 10 s, and press Esc.
+It prints the length of one pass. Start recording, press Space, and press Esc once the counter at the bottom of
+the screen has passed 1.00 and about 10 s more have gone by.
+
+![The player, with the pass counter in the bottom border](docs/player.gif)
+
+*The bottom of the screen while playing. `pass` counts how much of one full pass has been shown; 1.00 is one pass.*
 
 ### 3. Receive it
 
@@ -107,4 +119,5 @@ Run `vfdt help` for every command and option.
 | `app/` | the `vfdt` command line |
 | `tests/` | GoogleTest suite, one file per module |
 | `testcase/` | sample files and step-by-step phone tests (see `testcase/README.md`) |
+| `docs/` | the pictures in this README |
 | `third_party/` | vendored GoogleTest |

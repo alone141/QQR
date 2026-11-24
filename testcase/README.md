@@ -30,7 +30,8 @@ To narrow or widen the sweep, give lists, up to 32 combinations in all; for exam
 ## 3. Video transfer
 
 1. Run `vfdt play folder.tar.gz --cell N --colors C --fps F`. It prints the length of one pass.
-2. Start recording, press Space, record one pass plus about 10 s, press Esc.
+2. Start recording, press Space. When the `pass` counter at the bottom of the screen passes 1.00, wait about 10 s
+   more and press Esc.
 3. Run `vfdt decode video.mp4 --colors C --out received`.
 4. Pass: it prints `SHA-256 verified`, and `tar -xzf received\folder.tar.gz` gives back `folder\`.
 5. If it lists missing blocks: run `play` again, record another pass, and decode both videos together:
