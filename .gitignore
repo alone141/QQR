@@ -2,4 +2,5 @@ build/
 out/
 .vs/
 qqr-out/
+vfdt-out/
 *.ppm
