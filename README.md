@@ -7,10 +7,6 @@ receiving PC decodes the video back into the original file and checks its SHA-25
 It handles anything from a few kilobytes (one photo of one frame is enough) to files of 1–2 GB (a video of a few
 minutes to an hour, depending on the camera). One Windows executable, `vfdt.exe`, does both ends.
 
-![A phone's view of the screen during a transfer](docs/phone-capture.jpg)
-
-*One frame of a real 4K phone recording of the player. The squares in the corners are the finder patterns.*
-
 ## How it works
 
 ![Close-up of a frame corner with the finder pattern, palette, timing and parity strips, and data cells labelled](docs/frame-anatomy.png)
