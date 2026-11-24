@@ -145,6 +145,35 @@ TEST(FrameReaderTest, ReadsTiltedNoisyCameraCapture)
     EXPECT_EQ(read.payload, payload);
 }
 
+TEST(FrameReaderTest, ReadsFrameWithPassCounterInQuietZone)
+{
+    const vfdt::FrameLayout layout = MakeLayout(2);
+    const std::vector<std::uint8_t> payload = MakePayload(layout, 9);
+    const vfdt::FrameRenderer renderer{layout, cell_pixels};
+    vfdt::Image screen = renderer.Render(payload, 0);
+
+    // A solid block where the player draws "pass N.NN": worse than the real text.
+    const int border = vfdt::quiet_zone_cells * cell_pixels;
+    const int labelHeight = border - 2;
+    const int labelWidth = 9 * labelHeight;
+    for (int y = screen.height - border + 1; y < screen.height - 1; ++y)
+    {
+        for (int x = (screen.width - labelWidth) / 2; x < (screen.width + labelWidth) / 2; ++x)
+        {
+            const std::size_t at = (static_cast<std::size_t>(y) * static_cast<std::size_t>(screen.width) + static_cast<std::size_t>(x)) * 3;
+            std::fill_n(screen.pixels.begin() + static_cast<std::ptrdiff_t>(at), 3, std::uint8_t{96});
+        }
+    }
+
+    vfdt::CameraSimulator camera{MakeCamera(), screen.width, screen.height};
+    const vfdt::Image capture = camera.Capture(screen, screen, 1.0);
+    const vfdt::FrameReader reader{2};
+    vfdt::FrameRead read{};
+    ASSERT_EQ(reader.ReadFrame(capture, read), vfdt::ReadCode::Ok);
+    EXPECT_EQ(read.failedCodewords, 0);
+    EXPECT_EQ(read.payload, payload);
+}
+
 TEST(FrameReaderTest, ReadsVideoFrameInYuv420)
 {
     const vfdt::FrameLayout layout = MakeLayout(2);

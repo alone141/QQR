@@ -109,14 +109,41 @@ private:
     std::thread worker;
 };
 
+// The pass counter sits in the bottom quiet zone, centred, well away from the corner finders.
+struct PassLabel
+{
+    HFONT font{};
+    int height{};
+    wchar_t text[32]{};
+};
+
 struct WindowState
 {
     bool closing{};
     bool paused{true};
     const ReadyFrame* current{};
+    const PassLabel* label{};
 };
 
-void Present(HWND window, const ReadyFrame& frame, bool clearFirst)
+constexpr int min_label_pixels = 8;
+
+void UpdateLabel(PassLabel& label, const PlayerStatus& status)
+{
+    const double pass = static_cast<double>(status.framesShown) / static_cast<double>(std::max<std::uint64_t>(1, status.framesPerPass));
+    swprintf_s(label.text, L"pass %.2f", pass);
+}
+
+void DrawLabel(HDC dc, int left, int top, const ReadyFrame& frame, const PassLabel& label)
+{
+    RECT box{left, top + frame.height - label.height, left + frame.width, top + frame.height};
+    const HGDIOBJ previous = SelectObject(dc, label.font);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(96, 96, 96));
+    DrawTextW(dc, label.text, -1, &box, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SelectObject(dc, previous);
+}
+
+void Present(HWND window, const ReadyFrame& frame, bool clearFirst, const PassLabel* label)
 {
     RECT client{};
     GetClientRect(window, &client);
@@ -136,6 +163,10 @@ void Present(HWND window, const ReadyFrame& frame, bool clearFirst)
     const int top = (client.bottom - frame.height) / 2;
     SetDIBitsToDevice(dc, left, top, static_cast<DWORD>(frame.width), static_cast<DWORD>(frame.height), 0, 0, 0,
                       static_cast<UINT>(frame.height), frame.pixels.data(), &info, DIB_RGB_COLORS);
+    if (label != nullptr)
+    {
+        DrawLabel(dc, left, top, frame, *label);
+    }
     ReleaseDC(window, dc);
 }
 
@@ -167,7 +198,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         EndPaint(window, &paint);
         if (state != nullptr && state->current != nullptr)
         {
-            Present(window, *state->current, true);
+            Present(window, *state->current, true, state->label);
         }
         return 0;
     }
@@ -266,6 +297,15 @@ PlayCode PlayFrames(const FrameSource& source, const PlayerConfig& config, Playe
         return PlayCode::NoDisplay;
     }
     WindowState state{};
+    PassLabel label{};
+    label.height = quiet_zone_cells * config.cellPixels;
+    if (status.framesPerPass > 0 && label.height >= min_label_pixels)
+    {
+        label.font = CreateFontW(label.height - 2, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                 NONANTIALIASED_QUALITY, FIXED_PITCH | FF_MODERN, L"Consolas");
+    }
+    const PassLabel* shownLabel = label.font != nullptr ? &label : nullptr;
+    state.label = shownLabel;
     SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&state));
     ShowWindow(window, SW_SHOW);
     SetForegroundWindow(window);
@@ -278,8 +318,9 @@ PlayCode PlayFrames(const FrameSource& source, const PlayerConfig& config, Playe
         FrameQueue queue{source};
         ReadyFrame current = queue.Take();
         state.current = &current;
-        Present(window, current, true);
         status.framesShown = 1;
+        UpdateLabel(label, status);
+        Present(window, current, true, shownLabel);
         if (progress)
         {
             progress(status);
@@ -310,8 +351,9 @@ PlayCode PlayFrames(const FrameSource& source, const PlayerConfig& config, Playe
                 // A smaller frame would leave the edges of a larger one behind.
                 const bool resized = next.width != current.width || next.height != current.height;
                 current = std::move(next);
-                Present(window, current, resized);
                 ++status.framesShown;
+                UpdateLabel(label, status);
+                Present(window, current, resized, shownLabel);
                 for (int i = 0; i < status.refreshesPerFrame; ++i)
                 {
                     WaitForRefresh(screen.refreshRate);
@@ -333,6 +375,10 @@ PlayCode PlayFrames(const FrameSource& source, const PlayerConfig& config, Playe
         ShowCursor(TRUE);
     }
     DestroyWindow(window);
+    if (label.font != nullptr)
+    {
+        DeleteObject(label.font);
+    }
     UnregisterClassW(window_class_name, instance);
     return PlayCode::Ok;
 }

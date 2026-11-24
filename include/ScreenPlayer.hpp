@@ -65,8 +65,9 @@ PlayCode QueryScreen(const PlayerConfig& config, ScreenInfo& out);
 /**
  * @brief Show frames from @p source until Esc. Starts paused on frame 0; Space starts and pauses.
  * @param source Draws frame n; called in order from a worker thread. Frames should match the QueryScreen size.
- * @param config Only displayFps, windowWidth and windowHeight are used.
- * @param status Layout fields are kept as given; screen, timing, framesShown and paused are filled in.
+ * @param config Only cellPixels, displayFps, windowWidth and windowHeight are used. cellPixels sizes the pass counter.
+ * @param status Layout fields are kept as given; a framesPerPass above zero shows "pass N.NN" in the bottom quiet zone.
+ *        Screen, timing, framesShown and paused are filled in.
  * @param progress Called about once per second while playing and once after the window opens; may be empty.
  * @return PlayCode::Ok after the user closes the player, otherwise why it could not start.
  */
